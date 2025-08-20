@@ -9,10 +9,11 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 async def health():
     s = get_settings()
-    provider = "azure" if s.use_azure else ("openai" if s.OPENAI_API_KEY else "none")
+    provider = "azure" if s.use_azure else (
+        "openai" if s.use_openai else "none")
     return {
         "provider": provider,
-        "azure_deploy": s.AZURE_OPENAI_DEPLOYMENT,
-        "azure_embed": s.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
-        "db_url_scheme": (s.DATABASE_URL.split("://", 1)[0] if getattr(s, "DATABASE_URL", None) else None),
+        "azure_deploy": s.azure_openai_deployment,
+        "azure_embed": s.azure_openai_embedding_deployment,
+        "db_url_scheme": (s.database_url.split("://", 1)[0] if s.database_url else None),
     }

@@ -17,19 +17,19 @@ class AzureOpenAIService:
     def _init_client(self):  # type: ignore
         if AzureOpenAI is None:
             return None
-        if not self.settings.AZURE_OPENAI_ENDPOINT or not self.settings.AZURE_OPENAI_API_KEY:
+        if not self.settings.azure_openai_endpoint or not self.settings.azure_openai_api_key:
             return None
         return AzureOpenAI(
-            api_key=self.settings.AZURE_OPENAI_API_KEY,
-            api_version=self.settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=self.settings.AZURE_OPENAI_ENDPOINT.rstrip(
+            api_key=self.settings.azure_openai_api_key,
+            api_version=self.settings.azure_openai_api_version,
+            azure_endpoint=self.settings.azure_openai_endpoint.rstrip(
                 "/") + "/",
         )
 
     def is_configured(self) -> bool:
         return (
             self._client is not None
-            and self.settings.AZURE_OPENAI_DEPLOYMENT is not None
+            and self.settings.azure_openai_deployment is not None
         )
 
     async def chat(self, prompt: str) -> tuple[str, int]:
@@ -37,7 +37,7 @@ class AzureOpenAIService:
             raise RuntimeError("Azure OpenAI not configured")
 
         completion = self._client.chat.completions.create(  # type: ignore
-            model=self.settings.AZURE_OPENAI_DEPLOYMENT,  # type: ignore
+            model=self.settings.azure_openai_deployment,  # type: ignore
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             max_tokens=512,
