@@ -264,7 +264,7 @@ def _extract_inline_metrics(soup: BeautifulSoup) -> Dict[str, Dict]:
         metrics[key] = {"value": val, "unit": unit, "description": _metric_desc(key), "raw_value": value_raw}
     return metrics
 
-def scrape_company(company_name: str) -> Dict:
+def get_stock_data(company_name: str) -> Dict:
     """
     Resolve company via autosuggest and scrape key stock metrics from the overview page.
     Returns a dict; returns {} on failure.

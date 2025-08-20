@@ -268,7 +268,7 @@ def scrape_company_news(company_name: str, limit: int = 20) -> List[Dict]:
         return []
 
 # Backward-compat alias (fixes the import in fetch_news.py)
-def scrape_comapany_news(company_name: str, limit: int = 10) -> List[Dict]:
+def get_news(company_name: str, limit: int = 10) -> List[Dict]:
     return scrape_company_news(company_name, limit)
 
 def scrape(company_name: str, pages: int = 3, delay: float = 1.2, out_dir: Optional[str] = None) -> str:

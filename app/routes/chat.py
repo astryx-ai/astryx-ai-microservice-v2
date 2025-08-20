@@ -1,24 +1,23 @@
 from fastapi import APIRouter, HTTPException
-from app.schemas import AIChatRequest, AIChatResponse, AIChatResponseData
-from app.services.azure_openai import azure_openai_service
+from pydantic import BaseModel
+from typing import Optional, Literal, Dict
+from app.services.rag import rag_answer
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+class ChatPayload(BaseModel):
+    question: str
+    domain: Literal["news","stocks","both"] = "news"
+    ticker: Optional[str] = None
+    company: Optional[str] = None
 
-@router.post("/message", response_model=AIChatResponse)
-async def chat_message(req: AIChatRequest):
-    if not azure_openai_service.is_configured():
-        return AIChatResponse(success=False, error="Azure OpenAI not configured. Set env vars in .env")
+@router.post("")
+def chat(payload: ChatPayload):
     try:
-        response, tokens_used = await azure_openai_service.chat(req.query)
-        return AIChatResponse(
-            success=True,
-            data=AIChatResponseData(
-                response=response,
-                chart_data=None,
-                tokens_used=tokens_used,
-                cost=0.0,  # placeholder
-            ),
-        )
-    except Exception as e:  # pragma: no cover
+        filters: Dict[str, str] = {}
+        if payload.ticker:  filters["ticker"]  = payload.ticker.upper()
+        if payload.company: filters["company"] = payload.company
+        answer = rag_answer(payload.question, domain=payload.domain, filters=filters or None)
+        return {"answer": answer}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
