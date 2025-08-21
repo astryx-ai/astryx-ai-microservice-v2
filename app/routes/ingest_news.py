@@ -8,10 +8,12 @@ from app.scrapper.scrape_news import get_news  # your file
 
 router = APIRouter(prefix="/ingest/news", tags=["ingest"])
 
+
 class IngestNewsPayload(BaseModel):
     ticker: str
     company: Optional[str] = None
     limit: int = 20
+
 
 @router.post("")
 def ingest_news(payload: IngestNewsPayload):
@@ -20,7 +22,7 @@ def ingest_news(payload: IngestNewsPayload):
         items = items[: payload.limit]
         docs: List[Document] = []
         for it in items:
-            title = it.get("title","")
+            title = it.get("title", "")
             text = it.get("text") or it.get("summary") or ""
             blob = clean_text(f"{title}. {text}")
             if not blob:

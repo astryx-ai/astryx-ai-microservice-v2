@@ -8,25 +8,29 @@ from app.scrapper.scrape_stock import get_stock_data  # your file
 
 router = APIRouter(prefix="/ingest/stocks", tags=["ingest"])
 
+
 class IngestStockPayload(BaseModel):
     ticker: str
     company: Optional[str] = None
 
+
 def dict_to_text(data: Dict[str, Any]) -> str:
     # flatten dict into readable bullets/paragraph
     lines: List[str] = []
+
     def walk(prefix: str, val: Any):
         if isinstance(val, dict):
-            for k,v in val.items():
+            for k, v in val.items():
                 walk(f"{prefix}{k}.", v)
         elif isinstance(val, list):
-            for i,v in enumerate(val):
+            for i, v in enumerate(val):
                 walk(f"{prefix}{i}.", v)
         else:
             if val is not None and str(val).strip():
                 lines.append(f"{prefix} {val}")
     walk("", data)
     return "\n".join(lines)
+
 
 @router.post("")
 def ingest_stock(payload: IngestStockPayload):

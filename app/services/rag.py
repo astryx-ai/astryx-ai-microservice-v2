@@ -9,21 +9,26 @@ _splitter = RecursiveCharacterTextSplitter(
     chunk_size=1000, chunk_overlap=150, separators=["\n\n", "\n", ". ", " "]
 )
 
+
 def chunk_text(text: str, metadata: Dict[str, Any]) -> List[Document]:
     return _splitter.create_documents([text], metadatas=[metadata])
+
 
 def upsert_news(docs: List[Document]): news_store().add_documents(docs)
 def upsert_stocks(docs: List[Document]): stock_store().add_documents(docs)
 
-def retrieve_news(query: str, k=6, filters: Dict[str,str]|None=None):
+
+def retrieve_news(query: str, k=6, filters: Dict[str, str] | None = None):
     return news_store().similarity_search(query, k=k, filter=filters or {})
 
-def retrieve_stocks(query: str, k=6, filters: Dict[str,str]|None=None):
+
+def retrieve_stocks(query: str, k=6, filters: Dict[str, str] | None = None):
     return stock_store().similarity_search(query, k=k, filter=filters or {})
 
+
 _prompt = ChatPromptTemplate.from_template(
-"""You are a precise markets analyst. Use the provided context to answer briefly.
-If helpful, add bullet points and mention tickers inline.
+    """You are a precise markets analyst. Use the provided context to answer briefly.
+If helpful, add bullet points and mention tickers inline, and also provide link to sources you referred.
 
 Question:
 {question}
@@ -34,14 +39,15 @@ Context:
 Answer:"""
 )
 
+
 def rag_answer(question: str,
-               domain: Literal["news","stocks","both"]="news",
-               filters: Dict[str,str]|None=None) -> str:
+               domain: Literal["news", "stocks", "both"] = "news",
+               filters: Dict[str, str] | None = None) -> str:
     # gather context
     docs = []
-    if domain in ("news","both"):
+    if domain in ("news", "both"):
         docs += retrieve_news(question, k=4, filters=filters)
-    if domain in ("stocks","both"):
+    if domain in ("stocks", "both"):
         docs += retrieve_stocks(question, k=4, filters=filters)
 
     context = "\n\n".join(d.page_content for d in docs)
