@@ -41,9 +41,10 @@ Answer:"""
 
 
 def rag_answer(question: str,
-               domain: Literal["news", "stocks", "both"] = "news",
+               domain: Literal["news", "stocks", "both"] = "both",
                filters: Dict[str, str] | None = None) -> str:
     # gather context
+
     docs = []
     if domain in ("news", "both"):
         docs += retrieve_news(question, k=4, filters=filters)
