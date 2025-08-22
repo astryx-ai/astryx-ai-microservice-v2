@@ -8,7 +8,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 class ChatPayload(BaseModel):
     question: str
-    domain: Literal["news", "stocks", "both"] = "news"
+    domain: Literal["news", "stocks", "both"] = "both"
     ticker: Optional[str] = None
     company: Optional[str] = None
     

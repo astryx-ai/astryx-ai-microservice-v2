@@ -4,6 +4,7 @@ from app.routes.ingest_news import router as ingest_news_router
 from app.routes.ingest_stock import router as ingest_stock_router
 from app.routes.chat import router as chat_router
 from app.routes.candles import router as candles_router
+from app.routes.insight import router as insight_router
 
 app = FastAPI(title="Markets AI Microservice")
 
@@ -15,3 +16,4 @@ app.include_router(ingest_news_router)
 app.include_router(ingest_stock_router)
 app.include_router(chat_router)
 app.include_router(candles_router)
+app.include_router(insight_router) 
