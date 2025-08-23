@@ -1,9 +1,6 @@
-import requests
 from bs4 import BeautifulSoup
 import re
 import json
-import time
-from urllib.parse import quote_plus
 from datetime import datetime
 import random
 from typing import Dict, Optional
@@ -33,7 +30,7 @@ def _client(extra_headers: Optional[dict] = None) -> httpx.Client:
 
 def scrape_company_stock(company_name):
     """Compatibility wrapper for external callers (fetch_stock.py)."""
-    return scrape_company(company_name)
+    return scrape_company(company_name)  # noqa: F821
 
 def normalize_number(val):
     if not val:

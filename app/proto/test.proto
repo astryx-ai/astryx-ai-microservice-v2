@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package test;
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingReply {
+  string message = 1;
+}
+
+service TestService {
+  rpc Ping(PingRequest) returns (PingReply);
+}
+
+
