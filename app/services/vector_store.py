@@ -9,7 +9,7 @@ def news_store():
     return SupabaseVectorStore(
         client=_supabase,
         table_name="news_documents",
-        query_name="match_news_wrapper",  # Updated to use wrapper function
+        query_name="match_news_wrapper",
         embedding=embedder(),
     )
 
@@ -17,6 +17,6 @@ def stock_store():
     return SupabaseVectorStore(
         client=_supabase,
         table_name="stock_documents",
-        query_name="match_stocks_wrapper",  # Updated to use wrapper function
+        query_name="match_stocks_wrapper",
         embedding=embedder(),
     )
