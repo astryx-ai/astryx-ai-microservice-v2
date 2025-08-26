@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package message;
+
+message MessageRequest {
+  string query = 1;
+  string user_id = 2;
+  string chat_id = 3;
+}
+
+message MessageChunk {
+  string text = 1;
+  bool end = 2;
+  int32 index = 3;
+}
+
+service MessageService {
+  rpc MessageStream(MessageRequest) returns (stream MessageChunk);
+}
+
+

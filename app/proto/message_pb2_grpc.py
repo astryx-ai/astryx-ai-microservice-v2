@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import test_pb2 as test__pb2
+import message_pb2 as message__pb2
 
 GRPC_GENERATED_VERSION = '1.66.1'
 GRPC_VERSION = grpc.__version__
@@ -18,14 +18,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in test_pb2_grpc.py depends on'
+        + f' but the generated code in message_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class TestServiceStub(object):
+class MessageServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -34,43 +34,43 @@ class TestServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.Ping = channel.unary_unary(
-                '/test.TestService/Ping',
-                request_serializer=test__pb2.PingRequest.SerializeToString,
-                response_deserializer=test__pb2.PingReply.FromString,
+        self.MessageStream = channel.unary_stream(
+                '/message.MessageService/MessageStream',
+                request_serializer=message__pb2.MessageRequest.SerializeToString,
+                response_deserializer=message__pb2.MessageChunk.FromString,
                 _registered_method=True)
 
 
-class TestServiceServicer(object):
+class MessageServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def Ping(self, request, context):
+    def MessageStream(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_TestServiceServicer_to_server(servicer, server):
+def add_MessageServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Ping': grpc.unary_unary_rpc_method_handler(
-                    servicer.Ping,
-                    request_deserializer=test__pb2.PingRequest.FromString,
-                    response_serializer=test__pb2.PingReply.SerializeToString,
+            'MessageStream': grpc.unary_stream_rpc_method_handler(
+                    servicer.MessageStream,
+                    request_deserializer=message__pb2.MessageRequest.FromString,
+                    response_serializer=message__pb2.MessageChunk.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'test.TestService', rpc_method_handlers)
+            'message.MessageService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('test.TestService', rpc_method_handlers)
+    server.add_registered_method_handlers('message.MessageService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class TestService(object):
+class MessageService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def Ping(request,
+    def MessageStream(request,
             target,
             options=(),
             channel_credentials=None,
@@ -80,12 +80,12 @@ class TestService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(
+        return grpc.experimental.unary_stream(
             request,
             target,
-            '/test.TestService/Ping',
-            test__pb2.PingRequest.SerializeToString,
-            test__pb2.PingReply.FromString,
+            '/message.MessageService/MessageStream',
+            message__pb2.MessageRequest.SerializeToString,
+            message__pb2.MessageChunk.FromString,
             options,
             channel_credentials,
             insecure,
