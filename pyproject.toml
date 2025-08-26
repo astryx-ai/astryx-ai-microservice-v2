@@ -99,4 +99,8 @@ dependencies = [
     "zstandard==0.24.0",
     "grpcio==1.66.1",
     "grpcio-tools==1.66.1",
+    "setuptools==80.9.0",
+    "langgraph>=0.6.6",
+    "grpcio-reflection>=1.66.1",
+    "langchain-exa>=0.3.0",
 ]

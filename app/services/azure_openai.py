@@ -9,6 +9,7 @@ def chat_model(temperature: float = 0.2):
         azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
         openai_api_key=settings.AZURE_OPENAI_API_KEY,
         temperature=temperature,
+        streaming=True,
     )
 
 

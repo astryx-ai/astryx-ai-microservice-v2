@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "local"
 
+    EXA_API_KEY: str
+
     class Config:
         env_file = ".env"
         extra = "ignore"
