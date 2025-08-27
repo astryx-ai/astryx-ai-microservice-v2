@@ -6,6 +6,7 @@ from langchain.schema import Document
 from .super_agent import run_super_agent as _core_run_super_agent
 from .rag import chunk_text, upsert_news, upsert_stocks
 from .tools.exa import exa_live_search, exa_search  # langchain tools (@tool)
+from datetime import datetime, timezone
 
 def _call_tool(tool, *args, **kwargs) -> str:
     try:
@@ -83,16 +84,25 @@ def _fetch_yahoo_bars(symbol: str, range_: str = "5d", interval: str = "15m") ->
         })
     return rows
 
-def _upsert_news_for_query(query: str) -> None:
+def _upsert_news_for_query(query: str, company: str | None = None, ticker: str | None = None) -> None:
     try:
         text = _call_tool(exa_live_search, query, 5)
         if not text or "failed" in text.lower():
             text = _call_tool(exa_search, query, 5)
         blocks = _parse_exa_blocks(text)
         docs: List[Document] = []
+        now = datetime.now(timezone.utc).isoformat()
         for b in blocks:
-            md = {"url": b.get("url",""), "title": b.get("title",""), "source": b.get("url","")}
-            docs.extend(chunk_text(b.get("snippet",""), md))
+            md = {
+                "url": b.get("url", ""),
+                "title": b.get("title", ""),
+                "source": b.get("url", ""),
+                "type": "news",
+                "ts": now,
+                "company": company or "",
+                "ticker": ticker or "",
+            }
+            docs.extend(chunk_text(b.get("snippet", ""), md))
         upsert_news(docs)
     except Exception as e:
         print(f"[SuperAgent] news upsert skipped: {e}")
@@ -106,7 +116,7 @@ def _upsert_stocks_for_query(query: str) -> None:
         docs: List[Document] = []
         for r in rows:
             ts = int(r["ts"])
-            md = {"ticker": sym, "ts": ts}
+            md = {"ticker": sym, "ts": ts, "type": "stock"}
             text = f"{sym} {ts} O{r['open']} H{r['high']} L{r['low']} C{r['close']} V{r.get('volume')}"
             docs.append(Document(page_content=text, metadata=md))
         upsert_stocks(docs)
@@ -116,7 +126,9 @@ def _upsert_stocks_for_query(query: str) -> None:
 def run_super_agent(query: str, memory: Dict[str, Any] | None = None) -> Dict[str, Any]:
     result = _core_run_super_agent(query, memory=memory or {})
     if _news_intent(query):
-        _upsert_news_for_query(query)
+        comp = result.get("company") if isinstance(result, dict) else None
+        tkr = result.get("ticker") if isinstance(result, dict) else None
+        _upsert_news_for_query(query, company=comp, ticker=tkr)
     if _stock_intent(query):
         _upsert_stocks_for_query(query)
     if isinstance(result, dict):
