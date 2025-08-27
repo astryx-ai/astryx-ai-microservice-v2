@@ -14,8 +14,34 @@ message MessageChunk {
   int32 index = 3;
 }
 
+// Request to get a chart as a JSON blob following the schema in app/services/charts/chart.json
+message ChartRequest {
+  // Natural language query (e.g., "candle chart for TCS 1d 5m")
+  string query = 1;
+  // Explicit symbol (e.g., "RELIANCE.NS"). If empty, the server will try to infer from query.
+  string symbol = 2;
+  // Preferred chart type (e.g., "candlestick-standard", "line-standard"). If empty, inferred from query.
+  string chart_type = 3;
+  // Yahoo range (e.g., "1d", "5d", "1mo", "6mo", "1y", "max"). Optional.
+  string range = 4;
+  // Yahoo interval (e.g., "1m", "2m", "5m", "15m", "1d", "1wk"). Optional.
+  string interval = 5;
+  // Optional overrides
+  string title = 6;
+  string description = 7;
+  string user_id = 8;
+  string chat_id = 9;
+}
+
+// Response containing a JSON string representing the chart payload.
+message ChartResponse {
+  string json = 1;
+  string content_type = 2; // usually "application/json"
+}
+
 service MessageService {
   rpc MessageStream(MessageRequest) returns (stream MessageChunk);
+  rpc GetChart(ChartRequest) returns (ChartResponse);
 }
 
 

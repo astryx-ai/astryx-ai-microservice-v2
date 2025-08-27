@@ -39,12 +39,23 @@ class MessageServiceStub(object):
                 request_serializer=message__pb2.MessageRequest.SerializeToString,
                 response_deserializer=message__pb2.MessageChunk.FromString,
                 _registered_method=True)
+        self.GetChart = channel.unary_unary(
+                '/message.MessageService/GetChart',
+                request_serializer=message__pb2.ChartRequest.SerializeToString,
+                response_deserializer=message__pb2.ChartResponse.FromString,
+                _registered_method=True)
 
 
 class MessageServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def MessageStream(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetChart(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -57,6 +68,11 @@ def add_MessageServiceServicer_to_server(servicer, server):
                     servicer.MessageStream,
                     request_deserializer=message__pb2.MessageRequest.FromString,
                     response_serializer=message__pb2.MessageChunk.SerializeToString,
+            ),
+            'GetChart': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetChart,
+                    request_deserializer=message__pb2.ChartRequest.FromString,
+                    response_serializer=message__pb2.ChartResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -86,6 +102,33 @@ class MessageService(object):
             '/message.MessageService/MessageStream',
             message__pb2.MessageRequest.SerializeToString,
             message__pb2.MessageChunk.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetChart(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/message.MessageService/GetChart',
+            message__pb2.ChartRequest.SerializeToString,
+            message__pb2.ChartResponse.FromString,
             options,
             channel_credentials,
             insecure,

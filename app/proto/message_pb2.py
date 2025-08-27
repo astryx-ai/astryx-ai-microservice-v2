@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rmessage.proto\x12\x07message\"A\n\x0eMessageRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x0f\n\x07\x63hat_id\x18\x03 \x01(\t\"8\n\x0cMessageChunk\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x0b\n\x03\x65nd\x18\x02 \x01(\x08\x12\r\n\x05index\x18\x03 \x01(\x05\x32S\n\x0eMessageService\x12\x41\n\rMessageStream\x12\x17.message.MessageRequest\x1a\x15.message.MessageChunk0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rmessage.proto\x12\x07message\"A\n\x0eMessageRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x0f\n\x07\x63hat_id\x18\x03 \x01(\t\"8\n\x0cMessageChunk\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x0b\n\x03\x65nd\x18\x02 \x01(\x08\x12\r\n\x05index\x18\x03 \x01(\x05\"\xa8\x01\n\x0c\x43hartRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x12\n\nchart_type\x18\x03 \x01(\t\x12\r\n\x05range\x18\x04 \x01(\t\x12\x10\n\x08interval\x18\x05 \x01(\t\x12\r\n\x05title\x18\x06 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x07 \x01(\t\x12\x0f\n\x07user_id\x18\x08 \x01(\t\x12\x0f\n\x07\x63hat_id\x18\t \x01(\t\"3\n\rChartResponse\x12\x0c\n\x04json\x18\x01 \x01(\t\x12\x14\n\x0c\x63ontent_type\x18\x02 \x01(\t2\x8e\x01\n\x0eMessageService\x12\x41\n\rMessageStream\x12\x17.message.MessageRequest\x1a\x15.message.MessageChunk0\x01\x12\x39\n\x08GetChart\x12\x15.message.ChartRequest\x1a\x16.message.ChartResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,6 +35,10 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_MESSAGEREQUEST']._serialized_end=91
   _globals['_MESSAGECHUNK']._serialized_start=93
   _globals['_MESSAGECHUNK']._serialized_end=149
-  _globals['_MESSAGESERVICE']._serialized_start=151
-  _globals['_MESSAGESERVICE']._serialized_end=234
+  _globals['_CHARTREQUEST']._serialized_start=152
+  _globals['_CHARTREQUEST']._serialized_end=320
+  _globals['_CHARTRESPONSE']._serialized_start=322
+  _globals['_CHARTRESPONSE']._serialized_end=373
+  _globals['_MESSAGESERVICE']._serialized_start=376
+  _globals['_MESSAGESERVICE']._serialized_end=518
 # @@protoc_insertion_point(module_scope)
