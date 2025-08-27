@@ -1,12 +1,11 @@
 import asyncio
 import os
 import sys
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 
 import grpc
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from app.services.agent import build_agent
+from app.services.super_agent import run_super_agent
 from grpc_reflection.v1alpha import reflection
 
 
@@ -55,92 +54,44 @@ async def start_grpc_server(port: int = GRPC_PORT) -> grpc.aio.Server:  # type: 
 
     message_pb2, message_pb2_grpc = _ensure_message_stubs()
 
+    # Simple in-memory store keyed by chat_id or user_id
+    _MEM: Dict[str, Dict[str, Any]] = {}
+
     class MessageService(message_pb2_grpc.MessageServiceServicer):  # type: ignore[attr-defined]
         async def MessageStream(self, request, context):  # type: ignore[override]
             print(f"[gRPC] MessageStream received: user_id={getattr(request,'user_id',None)}, chat_id={getattr(request,'chat_id',None)}, query={getattr(request,'query',None)!r}")
-            agent = build_agent()
-            system = SystemMessage(content=(
-                "You can search the web using EXA tools when needed. Prefer up-to-date sources."
-            ))
-            user = HumanMessage(content=request.query)
-            index = 0
-            sent_any = False
+            # Use SuperAgent (Yahoo-based) and stream chunked final output
+            key = getattr(request, "chat_id", None) or getattr(request, "user_id", None)
+            mem = _MEM.get(key, {}) if key else {}
             try:
-                # Prefer fine-grained token streaming if available
-                if hasattr(agent, "astream_events"):
-                    async for event in agent.astream_events({"messages": [system, user]}, version="v1"):
-                        ev_name = ""
-                        data_obj = None
-                        # Normalize event and data across lc versions
-                        if isinstance(event, dict):
-                            ev_name = str(event.get("event") or event.get("type") or "")
-                            data_obj = event.get("data")
-                        else:
-                            ev_name = str(getattr(event, "event", "") or getattr(event, "type", ""))
-                            data_obj = getattr(event, "data", None) or event
-
-                        # Extract text from known chunk shapes
-                        text = ""
-                        if ev_name == "on_chat_model_stream" or ev_name == "on_llm_stream":
-                            # data_obj can be a dict or an AIMessageChunk-like object
-                            if isinstance(data_obj, dict):
-                                possible_chunk = data_obj.get("chunk") or data_obj.get("token") or ""
-                                if hasattr(possible_chunk, "content"):
-                                    text = getattr(possible_chunk, "content", None) or ""
-                                elif hasattr(possible_chunk, "delta"):
-                                    text = getattr(possible_chunk, "delta", None) or ""
-                                elif isinstance(possible_chunk, str):
-                                    text = possible_chunk
-                            else:
-                                # AIMessageChunk-like object
-                                text = getattr(data_obj, "content", None) or getattr(data_obj, "delta", None) or ""
-
-                        if text:
-                            print(f"[gRPC] stream chunk: {text[:60]!r}")
-                            sent_any = True
-                            yield message_pb2.MessageChunk(text=text, end=False, index=index)  # type: ignore[attr-defined]
-                            index += 1
-                        # Ignore other events; gRPC stream close will signal end
-                else:
-                    # Fallback to message-level streaming (larger chunks)
-                    async for event in agent.astream({"messages": [system, user]}, stream_mode="values"):
-                        msgs = event.get("messages") if isinstance(event, dict) else None
-                        if not msgs:
-                            continue
-                        last = msgs[-1]
-                        last_type = getattr(last, "type", "")
-                        if last_type != "ai":
-                            continue
-                        text = getattr(last, "content", None) or ""
-                        if not text:
-                            continue
-                        print(f"[gRPC] stream chunk: {text[:60]!r}")
-                        sent_any = True
-                        # Re-chunk larger message-level emissions to encourage progressive delivery
-                        chunk_size = 200
-                        for i in range(0, len(text), chunk_size):
-                            piece = text[i:i+chunk_size]
-                            if piece:
-                                yield message_pb2.MessageChunk(text=piece, end=False, index=index)  # type: ignore[attr-defined]
-                                index += 1
+                # Run sync SuperAgent without blocking the event loop
+                result = await asyncio.to_thread(run_super_agent, request.query, mem)
+                if key:
+                    _MEM[key] = mem
+                content = (result or {}).get("output") or ""
             except Exception as e:
-                print(f"[gRPC] agent streaming error: {e}")
-                sent_any = False
+                print(f"[gRPC] super_agent error: {e}")
+                content = ""
 
-            if not sent_any:
-                # Final fallback: single-shot invoke and manual chunking
-                try:
-                    resp = agent.invoke({"messages": [system, user]})
-                    content = getattr(resp.get("messages", [])[-1], "content", "") if isinstance(resp, dict) and resp.get("messages") else ""
-                    if content:
-                        chunk_size = 200
-                        for i in range(0, len(content), chunk_size):
-                            piece = content[i:i+chunk_size]
-                            if piece:
-                                yield message_pb2.MessageChunk(text=piece, end=False, index=index)  # type: ignore[attr-defined]
-                                index += 1
-                except Exception:
-                    pass
+            index = 0
+            if content:
+                # Emit fast, word-level chunks for snappier UX
+                words = content.split()
+                if len(words) > 1:
+                    for w in words:
+                        text = (w + " ")
+                        print(f"[gRPC] stream chunk: {text[:60]!r}")
+                        yield message_pb2.MessageChunk(text=text, end=False, index=index)  # type: ignore[attr-defined]
+                        index += 1
+                else:
+                    # Fallback to small fixed-size chunks
+                    chunk_size = 32
+                    for i in range(0, len(content), chunk_size):
+                        piece = content[i:i+chunk_size]
+                        if piece:
+                            print(f"[gRPC] stream chunk: {piece[:60]!r}")
+                            yield message_pb2.MessageChunk(text=piece, end=False, index=index)  # type: ignore[attr-defined]
+                            index += 1
 
     message_pb2_grpc.add_MessageServiceServicer_to_server(MessageService(), server)  # type: ignore[attr-defined]
 

@@ -27,8 +27,10 @@ def retrieve_stocks(query: str, k=6, filters: Dict[str, str] | None = None):
 
 
 _prompt = ChatPromptTemplate.from_template(
-    """You are a precise markets analyst. Use the provided context to answer briefly.
-If helpful, add bullet points and mention tickers inline, and also provide link to sources you referred.
+    """You are a precise markets analyst. Be brief and deterministic.
+- Use only the provided Context. No real-time caveats.
+- Prefer compact Markdown. If listing, keep to 3 bullets max.
+- Mention sources inline as [brand](url) when present in context.
 
 Question:
 {question}
