@@ -2,116 +2,101 @@ from typing import Any, List
 from langchain.tools import tool
 from langchain_exa import ExaSearchResults, ExaFindSimilarResults, ExaSearchRetriever
 from ..config import settings
-import httpx
 from bs4 import BeautifulSoup
+import requests
 
 
 def _format_exa_result(result: Any) -> str:
     try:
-        # Normalize to a list of dicts if possible
-        items: List[Any]
-        if isinstance(result, dict) and "results" in result and isinstance(result["results"], list):
-            items = result["results"]
-        elif isinstance(result, list):
-            items = result
-        else:
-            items = [result]
-
-        lines = []
-        for i, item in enumerate(items, 1):
-            title = None
-            url = None
-            if isinstance(item, dict):
-                title = item.get("title")
-                url = item.get("url") or item.get("id")
-            else:
-                title = getattr(item, "title", None)
-                url = getattr(item, "url", None) or getattr(item, "id", None)
-            if title or url:
-                lines.append(f"{i}. {title or ''} {('(' + url + ')') if url else ''}".strip())
-        return "\n".join(lines[:10])
+        title = (result.get("title") or "").strip()
+        url = (result.get("url") or "").strip()
+        snippet = (result.get("text") or result.get("snippet") or "").strip()
+        parts = [p for p in [title, url, snippet] if p]
+        return "\n".join(parts)
     except Exception:
-        return str(result)[:600]
+        return ""
 
 
 @tool("exa_search")
 def exa_search(query: str, max_results: int = 5) -> str:
-    """Search the web with EXA for the given query. Return a short, numbered list (title + URL)."""
-    print(f"[tool][EXA] exa_search called: query={query!r}, k={max_results}")
-    t = ExaSearchResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
-    result = t.invoke(query)
-    return _format_exa_result(result)
+    """
+    Web search via EXA. Returns a newline-separated list of title, url, snippet blocks.
+    """
+    try:
+        search = ExaSearchResults(api_key=settings.EXA_API_KEY, num_results=max_results)
+        results: List[dict] = search.invoke({"query": query})  # type: ignore
+        lines = []
+        for r in results or []:
+            fmt = _format_exa_result(r)
+            if fmt:
+                lines.append(fmt)
+        return "\n\n".join(lines) or "No results."
+    except Exception as e:
+        return f"EXA search failed: {e}"
 
 
 @tool("exa_find_similar")
 def exa_find_similar(url_or_text: str, max_results: int = 5) -> str:
-    """Find web pages similar to the given URL or text using EXA. Return a short, numbered list (title + URL)."""
-    print(f"[tool][EXA] exa_find_similar called: input={url_or_text!r}, k={max_results}")
-    t = ExaFindSimilarResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
-    result = t.invoke(url_or_text)
-    return _format_exa_result(result)
+    """
+    Find similar pages to the given URL or text using EXA.
+    """
+    try:
+        finder = ExaFindSimilarResults(api_key=settings.EXA_API_KEY, num_results=max_results)
+        results: List[dict] = finder.invoke({"query": url_or_text})  # type: ignore
+        lines = []
+        for r in results or []:
+            fmt = _format_exa_result(r)
+            if fmt:
+                lines.append(fmt)
+        return "\n\n".join(lines) or "No similar results."
+    except Exception as e:
+        return f"EXA find similar failed: {e}"
 
 
 def _truncate(text: str, limit: int) -> str:
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3] + "..."
+    if not text:
+        return ""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 @tool("fetch_url")
-def fetch_url(url: str, max_chars: int = 800) -> str:
-    """Fetch a web page and return a concise text snippet (title + summary)."""
-    print(f"[tool][WEB] fetch_url called: url={url!r}, max_chars={max_chars}")
+def fetch_url(url: str, limit: int = 6000) -> str:
+    """
+    Fetch a URL and return visible text (truncated).
+    """
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; AstryxBot/1.0)"}
-        resp = httpx.get(url, headers=headers, timeout=12.0, follow_redirects=True)
+        resp = requests.get(url, timeout=15)
         resp.raise_for_status()
-        html = resp.text
-        soup = BeautifulSoup(html, "lxml")
-        # Prefer meta description
-        title = (soup.title.string if soup.title else "").strip()
-        meta = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
-        desc = meta["content"].strip() if meta and meta.get("content") else ""
-        # Fallback extract
-        if not desc:
-            for tag in soup(["script", "style", "noscript"]):
-                tag.extract()
-            text = " ".join(soup.get_text(separator=" ").split())
-            desc = text
-        snippet = _truncate(desc, max_chars)
-        head = title or url
-        return f"{head}: {snippet}"
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.extract()
+        text = " ".join(soup.get_text(separator=" ").split())
+        return _truncate(text, limit)
     except Exception as e:
-        return f"Failed to fetch {url}: {e}"
+        return f"Fetch failed for {url}: {e}"
 
 
 @tool("exa_live_search")
-def exa_live_search(query: str, k: int = 8, max_chars: int = 600) -> str:
-    """Live-crawl search with EXA that returns concise, neutral summaries (title, URL, brief with key numbers/dates)."""
-    print(f"[tool][EXA] exa_live_search called: query={query!r}, k={k}")
+def exa_live_search(query: str, max_results: int = 5) -> str:
+    """
+    Retrieve live search results as short snippets using EXA retriever.
+    """
     try:
-        retriever = ExaSearchRetriever(
-            exa_api_key=settings.EXA_API_KEY,
-            k=max(1, min(int(k), 20)),
-            type="auto",
-            livecrawl="always",
-            text_contents_options={"max_characters": 3000},
-            summary={"query": "generate one line summary in simple words."},
+        retriever = ExaSearchRetriever.from_api_key(
+            api_key=settings.EXA_API_KEY,
+            k=max_results,
+            text=True,
         )
-        docs = retriever.invoke(query)
-        lines: List[str] = []
-        for i, d in enumerate(docs[: min(5, len(docs))], 1):
-            meta = getattr(d, "metadata", {}) or {}
-            title = meta.get("title") or ""
-            url = meta.get("url") or meta.get("id") or ""
-            summary = meta.get("summary") or " ".join(d.page_content.split())[:max_chars]
-            summary = _truncate(summary, max_chars)
-            head = (title or url).strip()
-            if head:
-                lines.append(f"{i}. {head} ({url})\n   {summary}")
-            else:
-                lines.append(f"{i}. {summary}")
-        return "\n".join(lines)
+        docs = retriever.get_relevant_documents(query)
+        lines = []
+        for d in docs or []:
+            title = (d.metadata.get("title") or "").strip()
+            url = (d.metadata.get("url") or "").strip()
+            snippet = _truncate(d.page_content or "", 400)
+            block = "\n".join([p for p in [title, url, snippet] if p])
+            if block:
+                lines.append(block)
+        return "\n\n".join(lines) or "No live results."
     except Exception as e:
         return f"EXA live search failed: {e}"
 
