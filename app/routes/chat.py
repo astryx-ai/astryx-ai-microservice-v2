@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-from app.services.agent import agent_answer
+from pydantic import BaseModel, ConfigDict
+from typing import Optional, Dict, Any
+from app.services.super_agent import run_super_agent
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 class ChatPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     query: str
     user_id: Optional[str] = None
     chat_id: Optional[str] = None
@@ -23,10 +24,17 @@ class ChatResponse(BaseModel):
     data: ChatResponseData
 
 
+_MEM: Dict[str, Dict[str, Any]] = {}
+
+
 @router.post("")
 def chat(payload: ChatPayload) -> ChatResponse:
     try:
-        answer = agent_answer(payload.query)
-        return ChatResponse(success=True, data=ChatResponseData(response=answer))
+        key = payload.chat_id or payload.user_id or ""
+        mem = _MEM.get(key, {}) if key else {}
+        result = run_super_agent(payload.query, memory=mem)
+        if key:
+            _MEM[key] = mem
+        return ChatResponse(success=True, data=ChatResponseData(response=result.get("output") or ""))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

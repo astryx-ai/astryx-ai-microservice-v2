@@ -36,7 +36,7 @@ def _format_exa_result(result: Any) -> str:
 
 @tool("exa_search")
 def exa_search(query: str, max_results: int = 5) -> str:
-    """Search the web with EXA for the given query. Returns brief results list."""
+    """Search the web with EXA for the given query. Return a short, numbered list (title + URL)."""
     print(f"[tool][EXA] exa_search called: query={query!r}, k={max_results}")
     t = ExaSearchResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
     result = t.invoke(query)
@@ -45,7 +45,7 @@ def exa_search(query: str, max_results: int = 5) -> str:
 
 @tool("exa_find_similar")
 def exa_find_similar(url_or_text: str, max_results: int = 5) -> str:
-    """Find web pages similar to the given URL or text using EXA. Returns brief results list."""
+    """Find web pages similar to the given URL or text using EXA. Return a short, numbered list (title + URL)."""
     print(f"[tool][EXA] exa_find_similar called: input={url_or_text!r}, k={max_results}")
     t = ExaFindSimilarResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
     result = t.invoke(url_or_text)
@@ -87,7 +87,7 @@ def fetch_url(url: str, max_chars: int = 800) -> str:
 
 @tool("exa_live_search")
 def exa_live_search(query: str, k: int = 8, max_chars: int = 600) -> str:
-    """Live-crawl search with EXA that returns concise, recent summaries (title, URL, brief)."""
+    """Live-crawl search with EXA that returns concise, neutral summaries (title, URL, brief with key numbers/dates)."""
     print(f"[tool][EXA] exa_live_search called: query={query!r}, k={k}")
     try:
         retriever = ExaSearchRetriever(

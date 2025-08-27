@@ -7,7 +7,6 @@ from app.services.agent import agent_answer
 from app.services.agent import build_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 
-
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
