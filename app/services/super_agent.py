@@ -32,7 +32,8 @@ from langchain.prompts import ChatPromptTemplate
 from bs4 import BeautifulSoup
 
 # Constants
-RECENCY_HOURS = 1
+# Cooldown window for news freshness checks (avoid refetching/reenriching too often)
+RECENCY_HOURS = 6
 CURRENCY_SYMBOL = "₹"  # INR for Indian market
 
 # ----------------------------
@@ -106,34 +107,34 @@ def _supabase_client():
 
 
 def _fuzzy_match_company(name: str, rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    q = name.casefold().strip()
-    tokens = [t for t in re.split(r"\W+", q) if t]
+    qnorm = _normalize_company_query(name)
+    tokens = [t for t in re.split(r"\W+", qnorm) if t]
     if not tokens:
         return None
 
     best: Optional[Dict[str, Any]] = None
-    best_score = -1
+    best_score = -1.0
+    qset = set(tokens)
+    qphrase = " ".join(tokens)
 
     for r in rows:
-        comp = (r.get("company_name") or "").casefold()
+        cname = (r.get("company_name") or "").strip().casefold()
+        comp = _normalize_company_query(cname)
         if not comp:
             continue
+        ctoks = [t for t in re.split(r"\W+", comp) if t]
+        cset = set(ctoks)
 
-        score = 0
-        matched_any = False
+        overlap = len(qset & cset)
+        union = len(qset | cset) or 1
+        jacc = overlap / union
+        phrase = 2.0 if qphrase and qphrase in comp else 0.0
+        prefix = 2.0 if comp.startswith(qphrase) else 0.0
+        has_nse = 1.0 if r.get("nse_symbol") else 0.0
+        has_bse = 0.5 if r.get("bse_symbol") else 0.0
+        score = overlap * 3.0 + jacc * 5.0 + phrase + prefix + has_nse + has_bse
 
-        for t in tokens:
-            if t in comp:
-                matched_any = True
-                if re.search(rf"\b{re.escape(t)}\b", comp):
-                    score += 3
-                else:
-                    score += 1
-
-        if comp.startswith(tokens[0]):
-            score += 2
-
-        if matched_any and score > best_score:
+        if score > best_score:
             best = r
             best_score = score
 
@@ -143,7 +144,8 @@ def _fuzzy_match_company(name: str, rows: List[Dict[str, Any]]) -> Optional[Dict
 def _normalize_company_query(name: str) -> str:
     n = (name or "").strip().casefold()
     n = re.sub(r"[\"'`]+", "", n)
-    suffixes = r"\b(ltd\.?|limited|pvt\.?|private|industries|industry|inc\.?|co\.?|company|corp\.?|corporation)\b"
+    # Keep 'industry/industries' as they are meaningful (e.g., Reliance Industries)
+    suffixes = r"\b(ltd\.?|limited|pvt\.?|private|inc\.?|co\.?|company|corp\.?|corporation)\b"
     n = re.sub(suffixes, "", n, flags=re.I)
     n = re.sub(r"\s+", " ", n).strip()
     return n
@@ -223,11 +225,13 @@ Query: {question}"""
     if not row and name_or_ticker and sb:
         try:
             qnorm = _normalize_company_query(name_or_ticker)
-            like = sb.table("companies").select("company_name,nse_symbol,bse_symbol").ilike(
-                "company_name", f"%{qnorm}%"
-            ).limit(30).execute()
+            toks = [t for t in re.split(r"\W+", qnorm) if t]
+            # OR across top tokens for broader match
+            clauses = [f"company_name.ilike.%{t}%" for t in toks[:3]]
+            or_clause = ",".join(clauses) if clauses else f"company_name.ilike.%{qnorm}%"
+            like = sb.table("companies").select("company_name,nse_symbol,bse_symbol").or_(or_clause).limit(100).execute()
             rows = like.data or []
-            row = _fuzzy_match_company(qnorm, rows)
+            row = _fuzzy_match_company(name_or_ticker, rows)
         except Exception:
             pass
 
@@ -376,6 +380,23 @@ def _compute_snapshot_from_chart(chart: Dict[str, Any]) -> Dict[str, Any]:
 def get_stock_node(state: AgentState) -> AgentState:
     ticker = state.get("ticker")
     ex = state.get("exchange")
+    company = state.get("company")
+
+    # Fallback: try to resolve from company if ticker missing
+    if not ticker and company:
+        y = _yahoo_search_symbol(company)
+        if y and y.get("ticker"):
+            state["ticker"] = ticker = y["ticker"]
+            state["exchange"] = ex = y.get("exchange")
+            state["company"] = y.get("company") or company
+
+    # Fallback: try to resolve exchange if missing
+    if ticker and not ex:
+        y = _yahoo_search_symbol(ticker)
+        if y and y.get("ticker"):
+            state["ticker"] = ticker = y["ticker"]
+            state["exchange"] = ex = y.get("exchange")
+
     if not ticker:
         state["stock_data"] = None
         return state
@@ -433,13 +454,24 @@ def get_stock_node(state: AgentState) -> AgentState:
 # ----------------------------
 
 def _news_cache_lookup(query: str, filters: Dict[str, str]) -> List[Document]:
+    """Retrieve potential cached news docs using vector similarity with metadata filter.
+
+    filters should include either {"ticker": TICKER} or {"company": COMPANY} to scope results.
+    """
     try:
-        return news_store().similarity_search(query, k=5, filter=filters)
+        # Always scope to news documents
+        f = dict(filters or {})
+        f.setdefault("type", "news")
+        return news_store().similarity_search(query or "news", k=8, filter=f)
     except Exception:
         return []
 
 
 def _news_cache_is_fresh(docs: List[Document], now: datetime) -> bool:
+    """Return True if any cached doc is within RECENCY_HOURS of now.
+
+    This is the cooldown mechanism (6h by default) to avoid repeated fetch/upsert.
+    """
     threshold = now - timedelta(hours=RECENCY_HOURS)
     for d in docs:
         ts = d.metadata.get("ts")
@@ -484,35 +516,65 @@ def get_news_node(state: AgentState) -> AgentState:
     ticker = state.get("ticker")
     query = company or ticker or ""
     filters = {"ticker": ticker} if ticker else {"company": company} if company else {}
-
-    cached_docs = _news_cache_lookup(query, filters)
-    items = []
-    use_cache = cached_docs and _news_cache_is_fresh(cached_docs, now)
+    # Prefer grouped summarized docs first, then any summarized, then raw
+    grouped_docs = _news_cache_lookup(query, {**filters, "llm_summarized": True, "grouped": True})
+    summarized_docs = grouped_docs or _news_cache_lookup(query, {**filters, "llm_summarized": True})
+    cached_docs = summarized_docs or _news_cache_lookup(query, filters)
+    items: List[Dict[str, Any]] = []
+    use_cache = bool(cached_docs) and _news_cache_is_fresh(cached_docs, now)
 
     if use_cache:
-        cached_docs.sort(key=lambda d: (not d.metadata.get("llm_summarized"), d.metadata.get("ts", "")))
-        for d in cached_docs[:3]:
+        # Sort summarized first, then by recency using epoch seconds
+        cached_docs.sort(key=lambda d: (not d.metadata.get("llm_summarized", False), -_ts_to_epoch(d.metadata.get("ts"))))
+        seen = set()
+        for d in cached_docs:
             md = d.metadata
+            key = ((md.get("url") or md.get("source") or "").lower(), (md.get("title") or "").lower())
+            if key in seen:
+                continue
+            seen.add(key)
             summary = _strip_urls(d.page_content)
-            items.append({"title": md.get("title", ""), "url": md.get("url", ""), "summary": summary})
+            items.append({"title": md.get("title", ""), "url": md.get("url", md.get("source", "")), "summary": summary})
+            if len(items) >= 3:
+                break
     else:
-        exa_query = f"{query} latest India stock news site:reputable sources"
+        # Fresh fetch only if cooldown expired or no cache
+        exa_query = f"{query} latest India stock news"
         items = _fetch_news_via_exa(exa_query)
 
         if items:
-            all_docs = []
+            all_docs: List[Document] = []
             for it in items:
                 content = f"{it['title']}\n{it['summary']}\n{it['url']}"
-                meta = {"ticker": ticker or "", "company": company or "", "ts": now.isoformat(), "title": it['title'], "url": it['url'], "type": "news"}
+                meta = {"ticker": ticker or "", "company": company or "", "ts": now.isoformat(), "title": it['title'], "url": it['url'], "type": "news", "llm_summarized": False}
                 all_docs.extend(chunk_text(content, meta))
             if all_docs:
                 upsert_news(all_docs)
 
-            if not _has_recent_enriched(company, ticker, now):
-                try:
-                    asyncio.get_running_loop().create_task(_bg_enrich_news(items, company, ticker, now.isoformat()))
-                except RuntimeError:
-                    pass
+            # Synchronously produce a grouped, time-stamped summary with source links
+            try:
+                grouped = _summarize_news_items(items, company, ticker, now)
+            except Exception:
+                grouped = None
+            if grouped and grouped.get("summary"):
+                gmeta = {
+                    "ticker": ticker or "",
+                    "company": company or "",
+                    "ts": now.isoformat(),
+                    "title": grouped["title"],
+                    "type": "news",
+                    "llm_summarized": True,
+                    "grouped": True,
+                    "source_links": json.dumps(grouped.get("links", [])),
+                }
+                upsert_news(chunk_text(grouped["summary"], gmeta))
+                # Prepend grouped summary to items so the user sees it immediately
+                items = [{"title": grouped["title"], "url": grouped.get("links", [""])[0] if grouped.get("links") else "", "summary": grouped["summary"]}] + items[:2]
+            # Optional background enrichment of top items
+            try:
+                asyncio.get_running_loop().create_task(_bg_enrich_news(items, company, ticker, now.isoformat()))
+            except RuntimeError:
+                pass
 
     state["news_items"] = items
     return state
@@ -520,8 +582,8 @@ def get_news_node(state: AgentState) -> AgentState:
 
 def _has_recent_enriched(company: Optional[str], ticker: Optional[str], now: datetime) -> bool:
     try:
-        filters = {"llm_summarized": True, **({"ticker": ticker} if ticker else {}), **({"company": company} if company else {})}
-        docs = news_store().similarity_search(company or ticker or "news", k=3, filter=filters)
+        filters = {"type": "news", "llm_summarized": True, **({"ticker": ticker} if ticker else {}), **({"company": company} if company else {})}
+        docs = news_store().similarity_search(company or ticker or "news", k=5, filter=filters)
         threshold = now - timedelta(hours=RECENCY_HOURS * 2)
         for d in docs:
             ts = d.metadata.get("ts")
@@ -558,6 +620,36 @@ Title: {title}\nContent: {content}\nSummary:"""
             pass
 
 
+def _summarize_news_items(items: List[Dict[str, Any]], company: Optional[str], ticker: Optional[str], now: datetime) -> Optional[Dict[str, Any]]:
+    """Create a concise market-impact summary from multiple items with source links."""
+    if not items:
+        return None
+    # Build a compact plain-text input for the LLM
+    lines = []
+    links = []
+    for it in items[:5]:
+        t = (it.get("title") or "").strip()
+        s = (it.get("summary") or "").strip()
+        u = (it.get("url") or "").strip()
+        if u:
+            links.append(u)
+        lines.append(f"- {t}: {s}")
+    text = "\n".join(lines)[:4000]
+    prompt = ChatPromptTemplate.from_template(
+        """You are a market analyst. Summarize the following headlines into 3-5 bullet points:
+Focus on: relevance, factual tone, sentiment (positive/negative/neutral), and potential near-term stock impact.
+End with a one-line time-stamp like: [As of HH:MM IST, DD Mon YYYY]. Keep it under 120 words.
+Company: {company}\nTicker: {ticker}\nItems:\n{text}\nSummary:"""
+    )
+    try:
+        resp = (prompt | chat_model(temperature=0.1)).invoke({"company": company or "", "ticker": ticker or "", "text": text})
+        summary = resp.content.strip()
+        title = f"{(company or ticker or 'Market')} — Summary as of {now.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime('%I:%M %p IST, %b %d, %Y')}"
+        return {"summary": summary, "title": title, "links": links}
+    except Exception:
+        return None
+
+
 # ----------------------------
 # 4) Decider
 # ----------------------------
@@ -590,6 +682,16 @@ _URL_RE = re.compile(r"https?://\S+", re.I)
 
 def _strip_urls(text: str) -> str:
     return re.sub(r"\s+", " ", _URL_RE.sub("", text)).strip()
+
+
+def _ts_to_epoch(ts: Optional[str]) -> int:
+    """Convert ISO timestamp to epoch seconds for sorting; return 0 if invalid."""
+    if not ts:
+        return 0
+    try:
+        return int(datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp())
+    except Exception:
+        return 0
 
 
 def _brand_from_url(url: str) -> str:
@@ -753,9 +855,80 @@ def run_super_agent(question: str, memory: Optional[Dict[str, Any]] = None) -> D
     init: AgentState = {"question": question, "memory": memory or {}, "now": now}
     final_state: AgentState = graph.invoke(init)
     if memory is not None:
-        memory.update({
-            "company": final_state.get("company"),
-            "ticker": final_state.get("ticker"),
-            "exchange": final_state.get("exchange"),
-        })
+        # Persist resolved context for downstream calls
+        if final_state.get("company"):
+            memory["company"] = final_state.get("company")
+        if final_state.get("ticker"):
+            memory["ticker"] = final_state.get("ticker")
+        if final_state.get("exchange"):
+            memory["exchange"] = final_state.get("exchange")
     return final_state
+
+
+# Lightweight helper: resolve only company/ticker/exchange using the same logic as the graph's first node.
+def resolve_company_ticker(question: str, memory: Optional[Dict[str, Any]] = None) -> Dict[str, Optional[str]]:
+    now = datetime.now(timezone.utc)
+    state: AgentState = {"question": question, "memory": memory or {}, "now": now}
+    state = resolve_ticker_node(state)
+    mem = state.get("memory", memory or {})
+    # return values and updated memory for caller to persist
+    return {
+        "company": state.get("company"),
+        "ticker": state.get("ticker"),
+        "exchange": state.get("exchange"),
+        "memory": mem,
+    }
+
+
+def resolve_company_ticker_fast(query: str) -> Dict[str, Optional[str]]:
+    """Resolve company/ticker/exchange quickly using Supabase fuzzy search; avoid LLM.
+
+    Strategy:
+    - Extract a likely company phrase from the query (after 'for', last quoted phrase, or whole query).
+    - If explicit Yahoo-style symbol (contains '.' or startswith '^'), return it (no exchange mapping).
+    - Query Supabase `companies` table with ilike OR across top tokens and fuzzy-score the best row; prefer NSE.
+    - If Supabase unavailable or no match, fall back to Yahoo search API for the phrase.
+    Returns keys: company, ticker, exchange (NSE/BSE) where possible.
+    """
+    s = (query or "").strip()
+    # Pull phrase after 'for ...' or last quoted string
+    m = re.search(r"\bfor\s+([A-Za-z0-9&\./\-\s]{2,60})", s, re.I)
+    phrase = m.group(1).strip() if m else None
+    if not phrase:
+        qs = re.findall(r"[\"']([^\"']+)[\"']", s)
+        phrase = (qs[-1].strip() if qs else s)
+    # Clean trailing chart keywords
+    phrase = re.sub(r"\s+(?:on|in|with|using|chart|line|area|bar|candle|candlestick|ohlc)\b.*$", "", phrase, flags=re.I).strip()
+    # If looks like explicit symbol/index
+    if "." in phrase or phrase.startswith("^"):
+        sym = phrase.upper()
+        if sym.endswith(".NS"):
+            return {"company": None, "ticker": sym[:-3], "exchange": "NSE"}
+        if sym.endswith(".BO"):
+            return {"company": None, "ticker": sym[:-3], "exchange": "BSE"}
+        return {"company": None, "ticker": sym, "exchange": None}
+
+    sb = _supabase_client()
+    row = None
+    if sb:
+        try:
+            qnorm = _normalize_company_query(phrase)
+            toks = [t for t in re.split(r"\W+", qnorm) if t]
+            clauses = [f"company_name.ilike.%{t}%" for t in toks[:3]] or [f"company_name.ilike.%{qnorm}%"]
+            like = sb.table("companies").select("company_name,nse_symbol,bse_symbol").or_(",".join(clauses)).limit(100).execute()
+            rows = like.data or []
+            row = _fuzzy_match_company(phrase, rows)
+        except Exception:
+            row = None
+
+    if row:
+        ticker = row.get("nse_symbol") or row.get("bse_symbol")
+        exch: Optional[str] = "NSE" if row.get("nse_symbol") else ("BSE" if row.get("bse_symbol") else None)
+        return {"company": row.get("company_name"), "ticker": ticker, "exchange": exch}
+
+    # Fallback: Yahoo symbol search
+    y = _yahoo_search_symbol(phrase)
+    if y and y.get("ticker"):
+        return {"company": y.get("company"), "ticker": y.get("ticker"), "exchange": y.get("exchange")}
+
+    return {"company": None, "ticker": None, "exchange": None}
