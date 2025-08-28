@@ -14,7 +14,7 @@ message MessageChunk {
   int32 index = 3;
 }
 
-// Request to get a chart as a JSON blob following the schema in app/services/charts/chart.json
+// Request to get a chart as a JSON blob following the schema in app/features/charts/chart.json
 message ChartRequest {
   // Natural language query (e.g., "candle chart for TCS 1d 5m")
   string query = 1;

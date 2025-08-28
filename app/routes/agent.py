@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.agent import agent_answer
+from app.agents.super.runner import run_super_agent
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -13,7 +13,7 @@ class AgentPayload(BaseModel):
 @router.post("")
 def run_agent(payload: AgentPayload):
     try:
-        answer = agent_answer(payload.question)
-        return {"answer": answer}
+        result = run_super_agent(payload.question, memory={})
+        return {"answer": result.get("output", "")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

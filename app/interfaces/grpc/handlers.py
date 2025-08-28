@@ -2,10 +2,9 @@ import json, re, os, asyncio
 from typing import Dict, Any, Optional, Iterable, Tuple, AsyncGenerator, List
 from datetime import datetime, timezone, timedelta
 
-from app.services.charts.builder import build_chart
-from app.services.super_agent_wrapped import run_super_agent
-from app.services.super_agent import resolve_company_ticker
-from app.services.memory_store import global_memory_store
+from app.agents.super.runner import run_super_agent
+from app.tools.memory_store import global_memory_store
+from app.graph.runner import run_chart_async
 
 CHART_CHUNK_SIZE = int(os.getenv("CHART_CHUNK_SIZE", "4096"))
 TEXT_SENTENCE_CHUNK_SIZE = int(os.getenv("TEXT_SENTENCE_CHUNK_SIZE", "600"))
@@ -108,7 +107,12 @@ async def message_stream_chunks(message_pb2, request) -> AsyncGenerator[object, 
                 mem = {k: _LAST_CONTEXT.get(k) for k in ("company","ticker","exchange")}
             # Try robust resolver against DB/Yahoo given the free-form query
             try:
-                ctx = resolve_company_ticker(query, mem)
+                # Lazy import to avoid hard dependency during migration
+                try:
+                    from app.agents.super.runner import resolve_company_ticker  # type: ignore
+                except Exception:
+                    resolve_company_ticker = None  # type: ignore
+                ctx = resolve_company_ticker(query, mem) if resolve_company_ticker else {}
                 tkr = ctx.get("ticker")
                 ex = ctx.get("exchange")
                 comp = ctx.get("company")
@@ -136,7 +140,22 @@ async def message_stream_chunks(message_pb2, request) -> AsyncGenerator[object, 
                     resolved_via = "memory"
         if not resolved_via and symbol and guessed:
             resolved_via = "guess"
-        payload = await build_chart(query=query, symbol=symbol, chart_type="", range_="", interval="", title="", description="")
+        # Use LangGraph chart pipeline
+        result = await run_chart_async({
+            "query": query,
+            "symbol": symbol or "",
+            "chart_type": "",
+            "range": "",
+            "interval": "",
+            "title": "",
+            "description": "",
+            "user_id": user_id or "",
+            "chat_id": chat_id or "",
+        })
+        try:
+            payload = json.loads(result.get("json") or "{}")
+        except Exception:
+            payload = {}
         # Attach minimal context for debugging client-side
         try:
             ctx_meta = {
@@ -190,61 +209,19 @@ async def message_stream_chunks(message_pb2, request) -> AsyncGenerator[object, 
         idx += 1
 
 async def handle_get_chart(message_pb2, request):
-    query = getattr(request, "query", "") or ""
-    symbol = getattr(request, "symbol", "") or None
-    chart_type = getattr(request, "chart_type", "") or None
-    range_hint = getattr(request, "range", "") or None
-    interval_hint = getattr(request, "interval", "") or None
-    chat_id = getattr(request, "chat_id", "") or None
-    user_id = getattr(request, "user_id", "") or None
-    # Fallback to resolver/memory if no explicit symbol provided
-    if not symbol:
-        resolved_via = None
-        # Prefer robust resolver using the query first
-        mem = _STORE.load(chat_id, user_id, ttl_seconds=MEMORY_TTL_SEC) or {}
-        try:
-            ctx = resolve_company_ticker(query, mem)
-            tkr = ctx.get("ticker")
-            ex = ctx.get("exchange")
-            comp = ctx.get("company")
-            if comp or tkr or ex:
-                mem.update({k: v for k, v in {"company": comp, "ticker": tkr, "exchange": ex}.items() if v})
-                _STORE.save(chat_id, user_id, mem)
-            if tkr and ex:
-                symbol = f"{tkr}.NS" if ex == "NSE" else (f"{tkr}.BO" if ex == "BSE" else tkr)
-                resolved_via = "resolver"
-            elif tkr:
-                symbol = tkr
-                resolved_via = "resolver"
-        except Exception:
-            pass
-        # Then use last-context snapshot if still unresolved
-        if not symbol:
-            try:
-                ts = _LAST_CONTEXT.get("ts")
-                if ts and (datetime.now(timezone.utc) - datetime.fromisoformat(ts)).total_seconds() <= MEMORY_TTL_SEC:
-                    tkr = _LAST_CONTEXT.get("ticker")
-                    ex = _LAST_CONTEXT.get("exchange")
-                    if tkr and ex:
-                        symbol = f"{tkr}.NS" if ex == "NSE" else (f"{tkr}.BO" if ex == "BSE" else tkr)
-                        resolved_via = "last_context"
-                    elif tkr:
-                        symbol = tkr
-                        resolved_via = "last_context"
-            except Exception:
-                pass
-    else:
-        resolved_via = "explicit"
-    payload = await build_chart(
-        query=query,
-        symbol= symbol or _extract_symbol(query)[0],
-        chart_type= chart_type or "",
-        range_= range_hint or "",
-        interval= interval_hint or "",
-        title="",
-        description="",
-    )
+    """Thin wrapper to keep legacy import stable; delegates to chart graph runner."""
+    result = await run_chart_async({
+        "query": getattr(request, "query", ""),
+        "symbol": getattr(request, "symbol", ""),
+        "chart_type": getattr(request, "chart_type", ""),
+        "range": getattr(request, "range", ""),
+        "interval": getattr(request, "interval", ""),
+        "title": getattr(request, "title", ""),
+        "description": getattr(request, "description", ""),
+        "user_id": getattr(request, "user_id", ""),
+        "chat_id": getattr(request, "chat_id", ""),
+    })
     return message_pb2.ChartResponse(  # type: ignore
-        json=json.dumps(payload, separators=(",", ":")),
-        content_type="application/json",
+        json=result.get("json", "{}"),
+        content_type=result.get("content_type", "application/json"),
     )

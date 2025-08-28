@@ -19,7 +19,8 @@ except Exception:  # pragma: no cover
     message_pb2_grpc = None  # type: ignore
 
 # Delegate business logic to handlers
-from app.services.grpc.handlers import message_stream_chunks, handle_get_chart
+from app.interfaces.grpc.handlers import message_stream_chunks, handle_get_chart
+from app.graph.runner import run_chart_async
 
 GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
 
@@ -30,6 +31,22 @@ class MessageService(message_pb2_grpc.MessageServiceServicer):  # type: ignore[a
         return
 
     async def GetChart(self, request, context):  # type: ignore[override]
+        use_graph = os.getenv("GRAPH_ENABLED", "").lower() in ("1","true","yes","on") or os.getenv("GRAPH_CHART_ENABLED", "").lower() in ("1","true","yes","on")
+        if use_graph:
+            inputs = {
+                "query": getattr(request, "query", ""),
+                "symbol": getattr(request, "symbol", ""),
+                "chart_type": getattr(request, "chart_type", ""),
+                "range": getattr(request, "range", ""),
+                "interval": getattr(request, "interval", ""),
+                "title": getattr(request, "title", ""),
+                "description": getattr(request, "description", ""),
+                "user_id": getattr(request, "user_id", ""),
+                "chat_id": getattr(request, "chat_id", ""),
+            }
+            result = await run_chart_async(inputs)
+            return message_pb2.ChartResponse(json=result.get("json", "{}"), content_type=result.get("content_type", "application/json"))
+        # Legacy behavior (default)
         resp = await handle_get_chart(message_pb2, request)
         return resp
 
