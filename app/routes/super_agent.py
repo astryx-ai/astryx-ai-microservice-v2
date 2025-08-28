@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Response
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 
-from app.services.super_agent_wrapped import run_super_agent
+from app.agents.super.runner import run_super_agent
 
 router = APIRouter(prefix="/super", tags=["super-agent"])
 

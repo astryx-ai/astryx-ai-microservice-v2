@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from .config import settings
 
@@ -42,7 +42,6 @@ class _InMemoryStore(MemoryStore):
                 fresh = False
             if not fresh:
                 return {}
-        # return copy without internal fields
         d = {k: v for k, v in rec.items() if not k.startswith("_")}
         return d
 
@@ -58,17 +57,6 @@ class _InMemoryStore(MemoryStore):
 
 
 class _SupabaseStore(MemoryStore):
-    """Persist memory in Supabase table `chat_memory`.
-
-    Expected schema (create if not exists outside of code):
-    - id: bigint (PK) or use chat_id as PK
-    - chat_id: text
-    - user_id: text
-    - memory: jsonb
-    - updated_at: timestamptz default now()
-    Unique index recommended on (chat_id) and optionally (user_id).
-    """
-
     def __init__(self):
         self._sb = None
         if create_client:
@@ -101,9 +89,7 @@ class _SupabaseStore(MemoryStore):
                 if not fresh:
                     return {}
             mem = (row.get("memory") or {})
-            if not isinstance(mem, dict):
-                return {}
-            return mem
+            return mem if isinstance(mem, dict) else {}
         except Exception:
             return {}
 
@@ -118,20 +104,17 @@ class _SupabaseStore(MemoryStore):
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             if chat_id:
-                # Prefer upsert on chat_id if unique
                 try:
                     self._sb.table("chat_memory").upsert(payload, on_conflict="chat_id").execute()
                     return
                 except Exception:
                     pass
-                # Fallback to manual update/insert
                 existing = self._sb.table("chat_memory").select("chat_id").eq("chat_id", chat_id).limit(1).execute()
                 if existing.data:
                     self._sb.table("chat_memory").update(payload).eq("chat_id", chat_id).execute()
                 else:
                     self._sb.table("chat_memory").insert(payload).execute()
             elif user_id:
-                # No chat_id, use user_id only (may create multiple rows; latest one will be loaded)
                 self._sb.table("chat_memory").insert(payload).execute()
         except Exception:
             return
@@ -144,10 +127,6 @@ def global_memory_store() -> MemoryStore:
     global _GLOBAL
     if _GLOBAL is not None:
         return _GLOBAL
-    # Try Supabase first; fallback to in-memory
     sb_store = _SupabaseStore()
-    if getattr(sb_store, "_sb", None) is not None:
-        _GLOBAL = sb_store
-    else:
-        _GLOBAL = _InMemoryStore()
+    _GLOBAL = sb_store if getattr(sb_store, "_sb", None) is not None else _InMemoryStore()
     return _GLOBAL

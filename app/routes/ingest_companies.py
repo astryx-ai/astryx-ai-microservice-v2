@@ -2,10 +2,11 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any, Optional, Set
 from supabase import Client
 
-from app.scrapper.companies_scraper import get_companies
-from app.services.config import settings
+from app.services.scrapers.companies_scraper import get_companies
+from app.tools.config import settings
 from supabase import create_client
 import psycopg
+from app.graph.runner import run_companies
 
 
 router = APIRouter(prefix="/ingest/companies", tags=["ingest"])
@@ -83,47 +84,7 @@ def ingest_companies(
     mode: str = Query("upsert", description="upsert | replace | truncate")
 ):
     try:
-        companies = get_companies()
-        if limit is not None:
-            companies = companies[: max(0, int(limit))]
-        if not companies:
-            return {"ingested": 0}
-
-        supa = _supabase()
-
-        # Prepare payload
-        payload: List[Dict[str, Any]] = [_coerce_record(x) for x in companies if x.get("isin")]
-        if not payload:
-            return {"ingested": 0}
-
-        CHUNK = 1000
-
-        if mode == "truncate":
-            _truncate_companies_table()
-            total = 0
-            for i in range(0, len(payload), CHUNK):
-                batch = payload[i : i + CHUNK]
-                supa.table("companies").insert(batch).execute()
-                total += len(batch)
-            return {"ingested": total, "mode": mode}
-
-        if mode == "replace":
-            # Upsert first to ensure all present rows exist, then delete rows no longer present
-            total = 0
-            for i in range(0, len(payload), CHUNK):
-                batch = payload[i : i + CHUNK]
-                supa.table("companies").upsert(batch, on_conflict="isin").execute()
-                total += len(batch)
-            deleted = _delete_missing_isins(supa, {p["isin"] for p in payload})
-            return {"ingested": total, "deleted_missing": deleted, "mode": mode}
-
-        # Default: idempotent upsert-only
-        total = 0
-        for i in range(0, len(payload), CHUNK):
-            batch = payload[i : i + CHUNK]
-            supa.table("companies").upsert(batch, on_conflict="isin").execute()
-            total += len(batch)
-        return {"ingested": total, "mode": mode}
+        return run_companies({"limit": limit, "mode": mode})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

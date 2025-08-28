@@ -3,9 +3,7 @@ from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 import json
 
-from app.services.agent import agent_answer
-from app.services.agent import build_agent
-from langchain_core.messages import HumanMessage, SystemMessage
+from app.agents.super.runner import run_super_agent
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -17,8 +15,8 @@ class AgentPayload(BaseModel):
 @router.post("")
 def run_agent(payload: AgentPayload):
     try:
-        answer = agent_answer(payload.question)
-        return {"answer": answer}
+        result = run_super_agent(payload.question, memory={})
+        return {"answer": result.get("output", "")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
