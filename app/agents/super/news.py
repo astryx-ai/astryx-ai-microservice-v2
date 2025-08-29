@@ -195,4 +195,11 @@ def get_news_node(state: AgentState) -> AgentState:
                 pass
 
     state["news_items"] = items
+    try:
+        mem = state.get("memory", {})
+        if items and (items[0].get("url")):
+            mem["last_news_link"] = items[0].get("url")
+        state["memory"] = mem
+    except Exception:
+        pass
     return state

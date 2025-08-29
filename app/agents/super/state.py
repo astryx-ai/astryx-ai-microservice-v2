@@ -16,13 +16,18 @@ class AgentState(TypedDict, total=False):
     ticker: Optional[str]
     exchange: Optional[Literal["NSE", "BSE"]]
     intent: Literal["stock", "news", "both", "greeting", "clarify"]
+    intents: List[str]
     news_detail: Literal["short", "medium", "long"]
     stock_data: Optional[Dict[str, Any]]
     news_items: Optional[List[Dict[str, Any]]]
+    # Multi-company support
+    matches: Optional[List[Dict[str, Any]]]
+    multi_results: Optional[List[Dict[str, Any]]]
     output: Optional[str]
     suggestions: Optional[List[Dict[str, Any]]]
     memory: Dict[str, Any]
     now: datetime
+    extras: Dict[str, Any]
 
 
 @dataclass
