@@ -19,16 +19,12 @@ fastapi==0.116.1
 frozendict==2.4.6
 frozenlist==1.7.0
 greenlet==3.2.4
-grpcio==1.66.1
-grpcio-reflection==1.66.1
-grpcio-tools==1.66.1
 h11==0.16.0
 h2==4.2.0
 hpack==4.1.0
 httpcore==1.0.9
 httptools==0.6.4
 httpx==0.28.1
-httpx-sse==0.4.1
 hyperframe==6.1.0
 idna==3.10
 jiter==0.10.0
@@ -60,7 +56,6 @@ peewee==3.18.2
 platformdirs==4.3.8
 postgrest==1.1.1
 propcache==0.3.2
-protobuf==5.29.3
 psycopg==3.2.9
 psycopg-binary==3.2.9
 pycparser==2.22
