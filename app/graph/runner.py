@@ -117,8 +117,16 @@ def run_chat(inputs: Dict[str, Any], memory: Dict[str, Any] | None = None) -> Di
         return {"response": out.get("output") or ""}
     saver = default_saver()
     final = chat_pipeline.run(state, saver=saver)
-    response = (final.get("outputs") or {}).get("response") or ""
-    return {"response": response}
+    outs = final.get("outputs") or {}
+    response = outs.get("response") or ""
+    chart_payload = outs.get("chart")
+    charts_payload = outs.get("charts")
+    resp: Dict[str, Any] = {"response": response}
+    if chart_payload:
+        resp["chart_data"] = chart_payload
+    if charts_payload:
+        resp["charts"] = charts_payload
+    return resp
 
 
 def run_companies(inputs: Dict[str, Any]) -> Dict[str, Any]:

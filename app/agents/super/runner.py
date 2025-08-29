@@ -1,23 +1,37 @@
 from __future__ import annotations
 from typing import Dict, Optional
 from datetime import datetime, timezone
+from app.graph.checkpoints import default_saver
+from app.tools.memory_store import global_memory_store
 
 
-def run_super_agent(question: str, memory: Optional[Dict[str, any]] = None) -> Dict[str, any]:
+def run_super_agent(question: str, memory: Optional[Dict[str, any]] = None, thread_id: Optional[str] = None) -> Dict[str, any]:
     from .graph import build_super_agent
     from .state import AgentState
 
     graph = build_super_agent()
     now = datetime.now(timezone.utc)
-    init: AgentState = {"question": question, "memory": memory or {}, "now": now}
-    final_state: AgentState = graph.invoke(init)
-    if memory is not None:
-        if final_state.get("company"):
-            memory["company"] = final_state.get("company")
-        if final_state.get("ticker"):
-            memory["ticker"] = final_state.get("ticker")
-        if final_state.get("exchange"):
-            memory["exchange"] = final_state.get("exchange")
+    # Load persisted memory if thread_id provided
+    store = global_memory_store()
+    persisted = (store.load(chat_id=thread_id, user_id=None, ttl_seconds=None) if thread_id else {})
+    base_mem = {}
+    base_mem.update(persisted or {})
+    base_mem.update(memory or {})
+    init: AgentState = {"question": question, "memory": base_mem, "now": now}
+    # Use LangGraph checkpointer if a thread_id is provided (e.g., chat_id)
+    saver = default_saver()
+    if thread_id and saver is not None:
+        config = {"checkpointer": saver, "configurable": {"thread_id": thread_id}}
+        final_state: AgentState = graph.invoke(init, config=config)
+    else:
+        final_state = graph.invoke(init)
+    # Save memory back
+    try:
+        mem = final_state.get("memory", base_mem)
+        if thread_id:
+            store.save(chat_id=thread_id, user_id=None, memory=mem)
+    except Exception:
+        pass
     return final_state
 
 

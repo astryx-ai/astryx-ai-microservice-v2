@@ -20,12 +20,11 @@ def _node(name):
 
 @_node("load_memory")
 def load_memory_node(state: BaseState) -> BaseState:
-    from app.tools.memory_store import global_memory_store
-    key = state.get("mem_key") or (state.get("inputs", {}).get("chat_id") or state.get("inputs", {}).get("user_id"))
-    store = global_memory_store()
-    mem = store.load(state.get("inputs", {}).get("chat_id"), state.get("inputs", {}).get("user_id"), ttl_seconds=900)
-    state["memory"] = mem or {}
-    state["mem_key"] = key
+    """No-op loader when using LangGraph checkpointer.
+
+    With a configured checkpointer and a stable thread_id, LangGraph restores the
+    prior state automatically. We keep this node for timing/structure symmetry.
+    """
     return state
 
 
@@ -35,18 +34,28 @@ def super_agent_node(state: BaseState) -> BaseState:
     q = (state.get("inputs", {}).get("query") or "").strip()
     mem = state.get("memory", {})
     with timed(state.setdefault("metrics", {}).setdefault("node_durations", {}), "super_agent"):
-        result: Dict[str, Any] = run_super_agent(q, memory=mem)
+        thread_id = state.get("inputs", {}).get("chat_id") or state.get("inputs", {}).get("user_id")
+        result: Dict[str, Any] = run_super_agent(q, memory=mem, thread_id=thread_id)
     state.setdefault("outputs", {})["response"] = result.get("output") or ""
-    state["memory"] = mem
+    # Bubble up chart JSON (if available) into outputs
+    extras = (result or {}).get("extras") or {}
+    chart_payload = extras.get("chart")
+    chart_multi = extras.get("charts")
+    if chart_payload:
+        state.setdefault("outputs", {})["chart"] = chart_payload
+    if chart_multi:
+        state.setdefault("outputs", {})["charts"] = chart_multi
+    # Persist updated memory from the super agent run into this pipeline state
+    state["memory"] = result.get("memory", mem)
     return state
 
 
 @_node("save_memory")
 def save_memory_node(state: BaseState) -> BaseState:
-    from app.tools.memory_store import global_memory_store
-    store = global_memory_store()
-    mem = state.get("memory", {})
-    store.save(state.get("inputs", {}).get("chat_id"), state.get("inputs", {}).get("user_id"), mem)
+    """No-op saver when using LangGraph checkpointer.
+
+    The checkpointer persists the state at each step keyed by thread_id.
+    """
     return state
 
 
@@ -71,6 +80,10 @@ def run(state: BaseState, saver=None) -> BaseState:
         s = super_agent_node(s)
         s = save_memory_node(s)
         return s
+    # Use chat_id or user_id as the persistent thread identifier.
+    inputs = state.get("inputs", {})
+    thread_id = inputs.get("chat_id") or inputs.get("user_id") or "anonymous"
+    config = {"configurable": {"thread_id": thread_id}}
     if saver is not None:
-        return graph.invoke(state, config={"checkpointer": saver})
-    return graph.invoke(state)
+        config["checkpointer"] = saver
+    return graph.invoke(state, config=config)
