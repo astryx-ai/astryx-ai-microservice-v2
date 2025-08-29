@@ -20,6 +20,7 @@ env/
 # Environment files
 .env
 .env.*
+AzureENVs
 
 # VSCode
 .vscode/
