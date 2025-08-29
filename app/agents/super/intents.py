@@ -116,7 +116,7 @@ Decide which tools to call for the message and extract any companies and timefra
 Rules:
 - Combine tools when the user asks multiple things (e.g., "news and chart of TCS").
 - If user asks to elaborate more on last news/article, include expand_news.
-- If the user requests only a chart, choose only chart. Do not add stock unless they also ask for price/metrics.
+- If the user requests only a chart, choose only chart.Do not add news or Do not add stock unless they also ask for price/metrics.
 - If small talk, choose only casual.
 Return JSON exactly with keys tools and entities. No extra text.
 
