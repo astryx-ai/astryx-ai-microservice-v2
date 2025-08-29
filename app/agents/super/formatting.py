@@ -177,7 +177,17 @@ def merge_results_node(state: AgentState) -> AgentState:
             )
             state["output"] = msg
         else:
-            state["output"] = "Do you want stock details, news, or both? You can say 'Price of TCS' or 'Latest news on HDFC Bank'."
+            # Follow the product rule: if memory exists, prefer it; else ask explicitly for company
+            mem = state.get("memory", {}) or {}
+            if mem.get("ticker") or mem.get("company") or mem.get("last_ticker") or mem.get("last_company"):
+                name = (mem.get("company") or mem.get("last_company") or "your last company")
+                tick = (mem.get("ticker") or mem.get("last_ticker") or "")
+                hint = f"Showing you the latest for {name}{f' ({tick})' if tick else ''} from your last request."
+                state["output"] = hint
+                # Also set a default intent to both to proceed smoothly
+                state["intent"] = "both"  # type: ignore
+            else:
+                state["output"] = "I need to know which company you mean."
         return state
 
     if intents and set(intents) <= {"casual"}:

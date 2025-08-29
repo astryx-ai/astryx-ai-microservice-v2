@@ -17,6 +17,9 @@ class Settings(BaseSettings):
 
     EXA_API_KEY: str
 
+    # Memory TTL in seconds for per-chat memory persistence; None disables TTL
+    MEMORY_TTL_SECONDS: int | None = 0
+
     class Config:
         env_file = ".env"
         extra = "ignore"

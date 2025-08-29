@@ -364,6 +364,40 @@ def resolve_ticker_node(state: AgentState) -> AgentState:
     # Memory short-circuit: if no explicit company extracted, consider reuse later.
     mem_rec = _get_ticker_record_from_memory(memory)
 
+    # If the user didn't mention any new company explicitly, prefer memory immediately
+    try:
+        phrase_probe = _extract_company_phrase(question)
+        try:
+            cand_probe = _regex_extract_candidates(question)
+        except Exception:
+            cand_probe = []
+        no_explicit_company = (not phrase_probe) and (not cand_probe)
+    except Exception:
+        no_explicit_company = False
+
+    if no_explicit_company and mem_rec is not None and state.get("intent") in ("stock", "news", "both"):
+        state["company"] = mem_rec.company_name
+        if mem_rec.nse_symbol:
+            state["ticker"] = mem_rec.nse_symbol
+            state["exchange"] = "NSE"
+            state["full_symbol"] = f"{mem_rec.nse_symbol}.NS"
+        elif mem_rec.bse_symbol:
+            state["ticker"] = mem_rec.bse_symbol
+            state["exchange"] = "BSE"
+            state["full_symbol"] = f"{mem_rec.bse_symbol}.BO"
+        # Mark that we resolved via memory to enable acknowledgement
+        try:
+            state.setdefault("extras", {}).update({"resolved_via_memory": True})
+        except Exception:
+            pass
+        return state
+    # If vague and no memory, ask for clarification per product rule
+    if no_explicit_company and mem_rec is None and state.get("intent") in ("stock", "news", "both"):
+        state["intent"] = "clarify"
+        state.setdefault("suggestions", [])
+        state["query_snip"] = question
+        return state
+
     # 1) Use the new company extractor pipeline with a DB subset
     db_subset = _load_company_db_subset(question)
     matches = extract_company_pipeline(question, db_subset)

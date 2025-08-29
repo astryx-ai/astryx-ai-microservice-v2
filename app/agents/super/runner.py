@@ -3,6 +3,7 @@ from typing import Dict, Optional
 from datetime import datetime, timezone
 from app.graph.checkpoints import default_saver
 from app.tools.memory_store import global_memory_store
+from app.tools.config import settings
 
 
 def run_super_agent(question: str, memory: Optional[Dict[str, any]] = None, thread_id: Optional[str] = None) -> Dict[str, any]:
@@ -13,7 +14,14 @@ def run_super_agent(question: str, memory: Optional[Dict[str, any]] = None, thre
     now = datetime.now(timezone.utc)
     # Load persisted memory if thread_id provided
     store = global_memory_store()
-    persisted = (store.load(chat_id=thread_id, user_id=None, ttl_seconds=None) if thread_id else {})
+    ttl = None
+    try:
+        ttl_val = getattr(settings, "MEMORY_TTL_SECONDS", 0)
+        # Treat non-positive as disabled TTL (persist across session)
+        ttl = int(ttl_val) if int(ttl_val or 0) > 0 else None
+    except Exception:
+        ttl = None
+    persisted = (store.load(chat_id=thread_id, user_id=None, ttl_seconds=ttl) if thread_id else {})
     base_mem = {}
     base_mem.update(persisted or {})
     base_mem.update(memory or {})

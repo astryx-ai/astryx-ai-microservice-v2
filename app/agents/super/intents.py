@@ -6,7 +6,7 @@ import re
 _RE_STOCK = re.compile(r"\b(price|stock|quote|ohlc|pe|market\s*cap|volume|high|low|intraday|today)\b", re.I)
 _RE_NEWS = re.compile(r"\b(news|headline|article|report|update|latest)\b", re.I)
 _RE_CHART = re.compile(r"\b(chart|candle|candlestick|ohlc|line\s*chart|area\s*chart|bar\s*chart)\b", re.I)
-_RE_EXPAND = re.compile(r"\b(elaborate|more\s*details|expand|tell\s*me\s*more|deepen)\b", re.I)
+_RE_EXPAND = re.compile(r"\b(elaborate|more\s*details|expand|tell\s*me\s*more|deepen|summary|summarize)\b", re.I)
 _RE_GREET = re.compile(r"\b(hi|hello|hey|how\s*are\s*you|good\s*(morning|afternoon|evening)|what's\s*up)\b", re.I)
 
 
@@ -31,11 +31,14 @@ def classify_multi_intent(query: str, memory: Optional[Dict[str, Any]] = None) -
             explicit_stock = bool(_RE_STOCK.search(q))
             explicit_news = bool(_RE_NEWS.search(q))
             explicit_chart = bool(_RE_CHART.search(q))
+            # If the user explicitly asked for chart only, do not add stock/news implicitly
+            if explicit_chart and not (explicit_stock or explicit_news):
+                return ["chart"]
             if explicit_stock and not (explicit_news or explicit_chart):
                 return ["stock"]
-            # Helpful default: chart alone often benefits from stock context
-            if "chart" in s and not ({"stock", "news"} & s):
-                s.add("stock")
+            # Ensure chart is present if explicitly requested but LLM missed it
+            if explicit_chart and "chart" not in s:
+                s.add("chart")
             return list(s)
     except Exception:
         pass
@@ -65,9 +68,9 @@ def classify_multi_intent(query: str, memory: Optional[Dict[str, Any]] = None) -
     # Stricter rule: if user asked only for stock, don't add news/chart implicitly
     if has_stock and not (has_news or has_chart):
         return ["stock"]
-    # Otherwise, gracefully add stock context for chart-only requests
-    if "chart" in intents and "stock" not in intents:
-        intents.add("stock")
+    # Stricter rule: if user asked only for chart, don't add stock/news implicitly
+    if has_chart and not (has_stock or has_news):
+        return ["chart"]
     return list(intents)
 
 
@@ -113,7 +116,7 @@ Decide which tools to call for the message and extract any companies and timefra
 Rules:
 - Combine tools when the user asks multiple things (e.g., "news and chart of TCS").
 - If user asks to elaborate more on last news/article, include expand_news.
-- Prefer chart+stock together when only chart is requested (to show price context).
+- If the user requests only a chart, choose only chart. Do not add stock unless they also ask for price/metrics.
 - If small talk, choose only casual.
 Return JSON exactly with keys tools and entities. No extra text.
 
