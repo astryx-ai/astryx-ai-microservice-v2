@@ -10,7 +10,11 @@ from .news import get_news_node
 from .formatting import merge_results_node
 from .intents import classify_multi_intent, wants_expand_only, llm_tool_router
 from .expand_news import expand_news_tool
-from app.interfaces.grpc.client import call_chart_via_grpc, call_stock_via_grpc_or_local, call_news_via_grpc_or_local
+from app.interfaces.local.client import (
+    call_chart_local as call_chart_via_grpc,
+    call_stock_local as call_stock_via_grpc_or_local,
+    call_news_local as call_news_via_grpc_or_local,
+)
 from .company_extractor import _regex_extract as _regex_extract_candidates, extract_company as extract_company_pipeline
 from .resolver import _load_company_db_subset
 
