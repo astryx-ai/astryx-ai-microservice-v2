@@ -17,3 +17,12 @@ app.include_router(agent_router)
 app.include_router(stream_alias_router)
 app.include_router(ingest_news_router)
 app.include_router(ingest_companies_router)
+
+# Enable permissive CORS for local development and browser clients
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],
+	allow_credentials=True,
+	allow_methods=["*"],
+	allow_headers=["*"],
+)
