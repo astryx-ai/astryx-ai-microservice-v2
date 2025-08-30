@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from .state import AgentState
 from .company_extractor import _regex_extract as _regex_extract_candidates, extract_company as extract_company_pipeline
 from .resolver import _load_company_db_subset
-from app.interfaces.grpc.client import call_stock_via_grpc_or_local, call_news_via_grpc_or_local
+from app.interfaces.local.client import call_stock_local as call_stock_via_grpc_or_local, call_news_local as call_news_via_grpc_or_local
 from .utils import fmt_money, change_emoji, brand_from_url, strip_urls
 from .intents import classify_multi_intent
 from .casual import casual_response
