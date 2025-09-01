@@ -1,5 +1,5 @@
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
-from .config import settings
+from app.config import settings
 
 
 def chat_model(temperature: float = 0.2):
@@ -21,3 +21,5 @@ def embedder():
         azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
         openai_api_key=settings.AZURE_OPENAI_API_KEY,
     )
+
+

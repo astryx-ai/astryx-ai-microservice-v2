@@ -1,9 +1,10 @@
 from typing import Any, List
 from langchain.tools import tool
 from langchain_exa import ExaSearchResults, ExaFindSimilarResults, ExaSearchRetriever
-from ..config import settings
+from app.config import settings
 import httpx
 from bs4 import BeautifulSoup
+from app.stream_utils import emit_process
 
 
 def _format_exa_result(result: Any) -> str:
@@ -37,7 +38,7 @@ def _format_exa_result(result: Any) -> str:
 @tool("exa_search")
 def exa_search(query: str, max_results: int = 5) -> str:
     """Search the web with EXA for the given query. Returns brief results list."""
-    print(f"[tool][EXA] exa_search called: query={query!r}, k={max_results}")
+    emit_process({"message": f"Searching Internet for '{query}'"})
     t = ExaSearchResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
     result = t.invoke(query)
     return _format_exa_result(result)
@@ -46,7 +47,7 @@ def exa_search(query: str, max_results: int = 5) -> str:
 @tool("exa_find_similar")
 def exa_find_similar(url_or_text: str, max_results: int = 5) -> str:
     """Find web pages similar to the given URL or text using EXA. Returns brief results list."""
-    print(f"[tool][EXA] exa_find_similar called: input={url_or_text!r}, k={max_results}")
+    emit_process({"message": "Finding similar pages"})
     t = ExaFindSimilarResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
     result = t.invoke(url_or_text)
     return _format_exa_result(result)
@@ -61,7 +62,7 @@ def _truncate(text: str, limit: int) -> str:
 @tool("fetch_url")
 def fetch_url(url: str, max_chars: int = 800) -> str:
     """Fetch a web page and return a concise text snippet (title + summary)."""
-    print(f"[tool][WEB] fetch_url called: url={url!r}, max_chars={max_chars}")
+    emit_process({"message": f"Fetching {url}"})
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; AstryxBot/1.0)"}
         resp = httpx.get(url, headers=headers, timeout=12.0, follow_redirects=True)
@@ -88,7 +89,7 @@ def fetch_url(url: str, max_chars: int = 800) -> str:
 @tool("exa_live_search")
 def exa_live_search(query: str, k: int = 8, max_chars: int = 600) -> str:
     """Live-crawl search with EXA that returns concise, recent summaries (title, URL, brief)."""
-    print(f"[tool][EXA] exa_live_search called: query={query!r}, k={k}")
+    emit_process({"message": f"Live searching Internet for '{query}'"})
     try:
         retriever = ExaSearchRetriever(
             exa_api_key=settings.EXA_API_KEY,
