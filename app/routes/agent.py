@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, AliasChoices
 
 from app.services.agent.runner import agent_answer, agent_stream_response
 
@@ -8,7 +8,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 class AgentPayload(BaseModel):
-    question: str
+    question: str = Field(validation_alias=AliasChoices("question", "query"))
     user_id: str | None = None
     chat_id: str | None = None
 
@@ -23,7 +23,7 @@ def run_agent(payload: AgentPayload):
 
 
 class AgentStreamPayload(BaseModel):
-    question: str
+    question: str = Field(validation_alias=AliasChoices("question", "query"))
     user_id: str | None = None
     chat_id: str | None = None
 
