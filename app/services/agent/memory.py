@@ -34,12 +34,17 @@ def build_langchain_messages(raw_items: List[Dict[str, Any]]) -> List[Any]:
 def get_context(chat_id: str, query_text: str, recency_limit: int = 10, retrieval_limit: int = 5) -> List[Any]:
     emit_process({"message": "Looking through memory"})
     recent = fetch_recent_messages(chat_id, limit=recency_limit)
-    # Create embedding for semantic retrieval
-    embedding_model = embedder()
-    emit_process({"message": "Embedding query for semantic retrieval"})
-    query_embedding = embedding_model.embed_query(query_text)
-    emit_process({"message": "Searching memory for relevant context"})
-    relevant = fetch_relevant_messages(chat_id, query_embedding=query_embedding, limit=retrieval_limit)
+    relevant: List[Dict[str, Any]] = []
+    try:
+        # Create embedding for semantic retrieval
+        embedding_model = embedder()
+        emit_process({"message": "Embedding query for semantic retrieval"})
+        query_embedding = embedding_model.embed_query(query_text)
+        emit_process({"message": "Searching memory for relevant context"})
+        relevant = fetch_relevant_messages(chat_id, query_embedding=query_embedding, limit=retrieval_limit)
+    except Exception:
+        # If embeddings or DB not configured, fall back to recency-only without failing
+        pass
     merged = _deduplicate_messages(recent + relevant)
     return build_langchain_messages(merged)
 
