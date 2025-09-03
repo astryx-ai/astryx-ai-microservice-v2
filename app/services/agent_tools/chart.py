@@ -66,10 +66,10 @@ def generate_graph(query: str, supporting_input: Optional[str] = None, chart_typ
         ]
 
         graph_llm = AzureChatOpenAI(
-            azure_deployment=settings.AZURE_OPENAI_DEPLOYMENT or os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT or os.getenv("AZURE_OPENAI_ENDPOINT"),
-            openai_api_key=settings.AZURE_OPENAI_API_KEY or os.getenv("AZURE_OPENAI_API_KEY"),
-            openai_api_version=settings.AZURE_OPENAI_API_VERSION or os.getenv("AZURE_OPENAI_API_VERSION"),
+            azure_deployment=settings.AZURE_OPENAI_DEPLOYMENT,
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            openai_api_key=settings.AZURE_OPENAI_API_KEY,
+            openai_api_version=settings.AZURE_OPENAI_API_VERSION,
             temperature=0.1,
             model_kwargs={"response_format": {"type": "json_object"}},
             streaming=False,
