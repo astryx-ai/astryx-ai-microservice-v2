@@ -1,0 +1,342 @@
+
+{
+  "chart_mappings": {
+    "bar-standard": "Best for showing values across categories — e.g., revenue by product, cost by department",
+    "bar-multiple": "Ideal when category labels are long or comparison between many groups is needed",
+    "bar-stacked": "Useful for comparing multiple series across categories — e.g., revenue of AWS vs Azure by region",
+    "bar-negative": "Good for visualizing positive vs negative (e.g., CapEx vs OpEx by region)",
+    "area-standard": "Best for showing cumulative trend of a metric over time — e.g., overall usage or sentiment growth",
+    "area-linear": "Ideal for showing smooth progression of a metric over time",
+    "area-stacked": "Good for comparing multiple series of stacked values over time or category",
+    "area-step": "Perfect for data that changes in distinct steps or phases — e.g., server status monitoring",
+    "line-standard": "Used for trends over time — e.g., monthly sales, usage, latency",
+    "line-linear": "Smooth line trend — better when precision and continuity matters",
+    "line-multiple": "Best for comparing trends of multiple metrics — e.g., compute vs storage usage",
+    "line-dots": "Highlights individual data points on a line chart — useful for error rates, volatility",
+    "line-step": "Step line charts for discrete value changes over time",
+    "line-label": "Line charts with data labels for precise value display",
+    "pie-standard": "Used to show simple part-to-whole ratios — e.g., distribution of costs or errors",
+    "pie-label": "Same as pie but with internal labels — better when segments are clearly readable",
+    "pie-interactive": "For part-to-whole charts where you want clean visuals with external legends",
+    "pie-donut": "Stylized pie chart — good for customer plan distribution or product tiers",
+    "radar-standard": "Used to show performance or value across multiple dimensions — e.g., scores, sales by month",
+    "radar-lines-only": "Same as radar, but emphasizes points — good when counts or durations are shown",
+    "radar-multiple": "Minimalist radar when grid distracts — ideal for subjective scores like satisfaction",
+    "radial-standard": "For comparing multiple entities across the same dimensions — e.g., S&P vs NASDAQ sectors",
+    "radial-stacked": "Stacked radial charts for hierarchical data display",
+    "radial-progress": "Single progress indicator with percentage display — e.g., completion status, achievement levels",
+    "candlestick-standard": "OHLC candlestick chart for intraday/daily price movements"
+  },
+  "SUPPORTED_CHART_FORMATS": {
+    "bar-standard": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "data"],
+      "example": {
+        "type": "bar-standard",
+        "title": "Monthly Sentiment Index",
+        "description": "Based on social media and community signals",
+        "dataKey": "value",
+        "nameKey": "category",
+        "data": []
+      }
+    },
+    "bar-multiple": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "xAxisKey", "layout", "data"],
+      "example": {
+        "type": "bar-multiple",
+        "title": "Global Cloud Market Share (Q1 2025)",
+        "description": "Market share of leading cloud providers worldwide",
+        "dataKey": "marketShare",
+        "nameKey": "provider",
+        "xAxisKey": "provider",
+        "layout": "horizontal",
+        "data": []
+      }
+    },
+    "bar-stacked": {
+      "required_keys": ["type", "title", "description", "xAxisKey", "nameKey", "groupedKeys", "data"],
+      "example": {
+        "type": "bar-stacked",
+        "title": "Q2 2025 Revenue by Region (AWS vs Azure)",
+        "description": "Regional revenue comparison",
+        "xAxisKey": "region",
+        "nameKey": "region",
+        "groupedKeys": ["AWS", "Azure"],
+        "data": []
+      }
+    },
+    "bar-negative": {
+      "required_keys": ["type", "title", "description", "xAxisKey", "groupedKeys", "legend", "data"],
+      "example": {
+        "type": "bar-negative",
+        "title": "Q2 2025 CapEx vs OpEx by Region",
+        "description": "Stacked bar comparing CapEx and OpEx",
+        "xAxisKey": "region",
+        "groupedKeys": ["CapEx", "OpEx"],
+        "legend": true,
+        "data": []
+      }
+    },
+
+    "area-standard": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "data"],
+      "example": {
+        "type": "area-standard",
+        "title": "Global Cloud Provider Sentiment (Q1 2025)",
+        "description": "Sentiment trend for leading cloud providers",
+        "dataKey": "sentiment",
+        "nameKey": "month",
+        "color": "hsl(207, 90%, 54%)",
+        "data": []
+      }
+    },
+    "area-linear": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "data"],
+      "example": {
+        "type": "area-linear",
+        "title": "Cloud Adoption Trend (Q1 2025)",
+        "description": "Adoption rate trend",
+        "dataKey": "adoptionRate",
+        "nameKey": "month",
+        "color": "hsl(120, 60%, 40%)",
+        "data": []
+      }
+    },
+    "area-stacked": {
+      "required_keys": ["type", "title", "description", "dataKey", "groupedKeys", "color", "legend", "nameKey", "data"],
+      "example": {
+        "type": "area-stacked",
+        "title": "Q2 2025 Revenue vs Costs by Region",
+        "description": "Comparing revenue and costs by region",
+        "dataKey": "amount",
+        "groupedKeys": ["Revenue", "Costs"],
+        "color": ["hsl(10, 80%, 55%)", "hsl(207, 90%, 54%)"],
+        "legend": true,
+        "nameKey": "region",
+        "data": []
+      }
+    },
+    "area-step": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "data"],
+      "example": {
+        "type": "area-step",
+        "title": "Traffic Sources",
+        "description": "Device traffic distribution over time",
+        "dataKey": "value",
+        "nameKey": "month",
+        "color": "hsl(260, 70%, 55%)",
+        "data": []
+      }
+    },
+
+    "line-standard": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "data"],
+      "example": {
+        "type": "line-standard",
+        "title": "Cloud Infrastructure Spending (Jan–Jun 2025)",
+        "description": "Monthly infrastructure spending (billion USD)",
+        "dataKey": "spending",
+        "nameKey": "month",
+        "color": "hsl(220, 75%, 55%)",
+        "data": []
+      }
+    },
+    "line-linear": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "legend", "data"],
+      "example": {
+        "type": "line-linear",
+        "title": "Average Global Cloud Latency (ms) - Jan to Jun 2025",
+        "description": "Latency fluctuations",
+        "dataKey": "latency",
+        "nameKey": "month",
+        "color": "hsl(340, 70%, 50%)",
+        "legend": false,
+        "data": []
+      }
+    },
+    "line-multiple": {
+      "required_keys": ["type", "title", "description", "dataKey", "groupedKeys", "color", "legend", "nameKey", "data"],
+      "example": {
+        "type": "line-multiple",
+        "title": "Compute vs Storage Usage (Jan–Jun 2025)",
+        "description": "Monthly trends for compute and storage usage",
+        "dataKey": "usage",
+        "groupedKeys": ["Compute", "Storage"],
+        "color": ["hsl(30, 85%, 55%)", "hsl(207, 90%, 54%)"],
+        "legend": true,
+        "nameKey": "month",
+        "data": []
+      }
+    },
+    "line-dots": {
+      "required_keys": ["type", "title", "description", "dataKey", "color", "legend", "dots", "nameKey", "data"],
+      "example": {
+        "type": "line-dots",
+        "title": "API Error Rate (%), Jan–Jun 2025",
+        "description": "Monthly API error rate percentage",
+        "dataKey": "errorRate",
+        "color": "hsl(10, 80%, 50%)",
+        "legend": false,
+        "dots": true,
+        "nameKey": "month",
+        "data": []
+      }
+    },
+    "line-step": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "data"],
+      "example": {
+        "type": "line-step",
+        "title": "Server Response Time Steps",
+        "description": "Step-wise response time changes",
+        "dataKey": "responseTime",
+        "nameKey": "time",
+        "color": "hsl(180, 60%, 45%)",
+        "data": []
+      }
+    },
+    "line-label": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "label", "data"],
+      "example": {
+        "type": "line-label",
+        "title": "Quarterly Revenue with Labels",
+        "description": "Revenue trend with data point labels",
+        "dataKey": "revenue",
+        "nameKey": "quarter",
+        "color": "hsl(260, 70%, 55%)",
+        "label": true,
+        "data": []
+      }
+    },
+
+    "pie-standard": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "data"],
+      "example": {
+        "type": "pie-standard",
+        "title": "API Error Types (%), Jan–Jun 2025",
+        "description": "Distribution of API error types",
+        "dataKey": "percentage",
+        "nameKey": "errorType",
+        "data": []
+      }
+    },
+    "pie-label": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "label", "legend", "data"],
+      "example": {
+        "type": "pie-label",
+        "title": "Cloud Spend by Service (%), Q2 2025",
+        "description": "Percentage distribution across cloud services",
+        "dataKey": "percentage",
+        "nameKey": "service",
+        "label": true,
+        "legend": false,
+        "data": []
+      }
+    },
+    "pie-interactive": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "legend", "data"],
+      "example": {
+        "type": "pie-interactive",
+        "title": "Mobile OS Market Share (%), Q2 2025",
+        "description": "Pie chart with legend by OS",
+        "dataKey": "percentage",
+        "nameKey": "os",
+        "legend": true,
+        "data": []
+      }
+    },
+    "pie-donut": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "legend", "data"],
+      "example": {
+        "type": "pie-donut",
+        "title": "Customer Plans (Count), Q2 2025",
+        "description": "Donut pie chart of customer plans",
+        "dataKey": "customers",
+        "nameKey": "plan",
+        "legend": true,
+        "data": []
+      }
+    },
+
+    "radar-standard": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "color", "legend", "data"],
+      "example": {
+        "type": "radar-standard",
+        "title": "EV Sales in Europe (Jan–Jun 2025)",
+        "description": "Monthly electric vehicle sales in Europe",
+        "dataKey": "sales",
+        "nameKey": "month",
+        "color": "hsl(207, 90%, 54%)",
+        "legend": true,
+        "data": []
+      }
+    },
+    "radar-lines-only": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "data"],
+      "example": {
+        "type": "radar-lines-only",
+        "title": "Performance Dimensions",
+        "description": "Emphasizes lines/points",
+        "dataKey": "value",
+        "nameKey": "dimension",
+        "data": []
+      }
+    },
+    "radar-multiple": {
+      "required_keys": ["type", "title", "description", "groupedKeys", "nameKey", "legend", "data"],
+      "example": {
+        "type": "radar-multiple",
+        "title": "Scores by Category",
+        "description": "Multiple series on radar",
+        "groupedKeys": ["Series A", "Series B"],
+        "nameKey": "dimension",
+        "legend": true,
+        "data": []
+      }
+    },
+
+    "radial-standard": {
+      "required_keys": ["type", "title", "description", "dataKey", "nameKey", "data"],
+      "example": {
+        "type": "radial-standard",
+        "title": "Category Comparison",
+        "description": "Radial bar/comparison",
+        "dataKey": "value",
+        "nameKey": "label",
+        "data": []
+      }
+    },
+    "radial-stacked": {
+      "required_keys": ["type", "title", "description", "groupedKeys", "nameKey", "data"],
+      "example": {
+        "type": "radial-stacked",
+        "title": "Stacked Radial",
+        "description": "Stacked radial by group",
+        "groupedKeys": ["Group A", "Group B"],
+        "nameKey": "label",
+        "data": []
+      }
+    },
+    "radial-progress": {
+      "required_keys": ["type", "title", "description", "dataKey", "data"],
+      "example": {
+        "type": "radial-progress",
+        "title": "Completion",
+        "description": "Single progress indicator",
+        "dataKey": "percentage",
+        "data": []
+      }
+    },
+
+    "candlestick-standard": {
+      "required_keys": ["type", "title", "description", "xAxisKey", "groupedKeys", "nameKey", "data"],
+      "example": {
+        "type": "candlestick-standard",
+        "title": "Price Candles",
+        "description": "OHLC candles",
+        "xAxisKey": "time",
+        "groupedKeys": ["open", "high", "low", "close"],
+        "nameKey": "time",
+        "data": []
+      }
+    }
+  }
+}

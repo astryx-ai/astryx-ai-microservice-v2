@@ -1,5 +1,4 @@
 from typing import Any, List
-from langchain.tools import tool
 from langchain_exa import ExaSearchResults, ExaFindSimilarResults, ExaSearchRetriever
 from app.config import settings
 import httpx
@@ -35,8 +34,7 @@ def _format_exa_result(result: Any) -> str:
         return str(result)[:600]
 
 
-@tool("exa_search")
-def exa_search(query: str, max_results: int = 5) -> str:
+def exa_search_func(query: str, max_results: int = 5) -> str:
     """Search the web with EXA for the given query. Returns brief results list."""
     emit_process({"message": f"Searching Internet for '{query}'"})
     t = ExaSearchResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
@@ -44,8 +42,7 @@ def exa_search(query: str, max_results: int = 5) -> str:
     return _format_exa_result(result)
 
 
-@tool("exa_find_similar")
-def exa_find_similar(url_or_text: str, max_results: int = 5) -> str:
+def exa_find_similar_func(url_or_text: str, max_results: int = 5) -> str:
     """Find web pages similar to the given URL or text using EXA. Returns brief results list."""
     emit_process({"message": "Finding similar pages"})
     t = ExaFindSimilarResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
@@ -59,8 +56,7 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 3] + "..."
 
 
-@tool("fetch_url")
-def fetch_url(url: str, max_chars: int = 800) -> str:
+def fetch_url_func(url: str, max_chars: int = 800) -> str:
     """Fetch a web page and return a concise text snippet (title + summary)."""
     emit_process({"message": f"Fetching {url}"})
     try:
@@ -86,8 +82,7 @@ def fetch_url(url: str, max_chars: int = 800) -> str:
         return f"Failed to fetch {url}: {e}"
 
 
-@tool("exa_live_search")
-def exa_live_search(query: str, k: int = 8, max_chars: int = 600) -> str:
+def exa_live_search_func(query: str, k: int = 8, max_chars: int = 600) -> str:
     """Live-crawl search with EXA that returns concise, recent summaries (title, URL, brief)."""
     emit_process({"message": f"Live searching Internet for '{query}'"})
     try:
@@ -116,4 +111,6 @@ def exa_live_search(query: str, k: int = 8, max_chars: int = 600) -> str:
     except Exception as e:
         return f"EXA live search failed: {e}"
 
+
+# Note: Tool-decorated variants are intentionally omitted. StructuredTool is used via registry.
 
