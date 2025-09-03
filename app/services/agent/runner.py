@@ -7,64 +7,6 @@ import ast
 from .builder import build_agent
 from .memory import get_context
 from app.stream_utils import normalize_stream_event, set_process_emitter
-from app.services.agent_tools.chart import generate_graph
-
-
-# --- helper: extract the FIRST valid JSON object/array from arbitrary text ---
-def _extract_first_json(text: str) -> str | None:
-    """
-    Try to recover the first valid JSON value from a string that may contain
-    prose or Markdown code fences. Returns the JSON substring if found, else None.
-
-    Strategy:
-    1) Fast path: if the whole text is valid JSON, return it.
-    2) If there are fenced blocks, try to decode each block's content first.
-    3) Scan the entire text for the first '{' or '[' and use JSONDecoder.raw_decode
-       from those positions until one parses successfully.
-    """
-    if not isinstance(text, str):
-        return None
-
-    s = text.strip()
-    # 1) Whole string is JSON
-    try:
-        json.loads(s)
-        return s
-    except Exception:
-        pass
-
-    # 2) Prefer JSON fenced code blocks if present (non-greedy)
-    #    This avoids greediness and tries each block independently.
-    fenced = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", s, flags=re.IGNORECASE)
-    for block in fenced:
-        candidate = block.strip()
-        if not candidate:
-            continue
-        try:
-            json.loads(candidate)
-            return candidate
-        except Exception:
-            # Try extracting first JSON inside the block, in case comments/notes exist
-            dec = json.JSONDecoder()
-            for i, ch in enumerate(candidate):
-                if ch in '{[':
-                    try:
-                        _, end = dec.raw_decode(candidate, i)
-                        return candidate[i:end]
-                    except Exception:
-                        continue
-            continue
-
-    # 3) Scan entire text for the first JSON value
-    dec = json.JSONDecoder()
-    for i, ch in enumerate(s):
-        if ch in '{[':
-            try:
-                _, end = dec.raw_decode(s, i)
-                return s[i:end]
-            except Exception:
-                continue
-    return None
 
 
 def _parse_json_or_python(s: str) -> dict | list | None:
