@@ -1,22 +1,15 @@
-from pydantic_settings import BaseSettings
-from pathlib import Path
-from dotenv import load_dotenv, find_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Proactively load .env so settings are present even if CWD varies
-# 1) Try to find via cwd walk-up
-_dotenv_path = find_dotenv(filename=".env", usecwd=True)
-# 2) Fallback to repo root relative to this file (../.env)
-if not _dotenv_path:
-    repo_root = Path(__file__).resolve().parents[1]
-    candidate = repo_root / ".env"
-    if candidate.exists():
-        _dotenv_path = str(candidate)
-# Load if found (don't override already-set envs)
-if _dotenv_path:
-    load_dotenv(_dotenv_path, override=False)
+# No explicit load_dotenv. Rely on Pydantic to read .env from the repo root.
 
 
 class Settings(BaseSettings):
+    # Pydantic Settings v2 configuration — ensures .env is read even if CWD varies
+    model_config = SettingsConfigDict(
+    env_file=".env",
+        extra="ignore",
+    )
+
     AZURE_OPENAI_ENDPOINT: str
     AZURE_OPENAI_API_KEY: str
     AZURE_OPENAI_DEPLOYMENT: str
@@ -31,10 +24,6 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "local"
 
     EXA_API_KEY: str
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 
 settings = Settings()

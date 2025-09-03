@@ -1,5 +1,4 @@
 from typing import Any, List
-from langchain.tools import tool
 from langchain_exa import ExaSearchResults, ExaFindSimilarResults, ExaSearchRetriever
 from app.config import settings
 import httpx
@@ -113,9 +112,5 @@ def exa_live_search_func(query: str, k: int = 8, max_chars: int = 600) -> str:
         return f"EXA live search failed: {e}"
 
 
-# Optional: also expose tool-decorated variants (not used by structured registry)
-exa_search = tool("exa_search")(exa_search_func)
-exa_find_similar = tool("exa_find_similar")(exa_find_similar_func)
-fetch_url = tool("fetch_url")(fetch_url_func)
-exa_live_search = tool("exa_live_search")(exa_live_search_func)
+# Note: Tool-decorated variants are intentionally omitted. StructuredTool is used via registry.
 
