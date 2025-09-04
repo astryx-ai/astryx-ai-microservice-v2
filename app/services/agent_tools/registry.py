@@ -5,6 +5,15 @@ from langchain.tools import StructuredTool
 
 from .exa import exa_search_func, exa_find_similar_func, fetch_url_func, exa_live_search_func
 from .chart import CHART_GENERATE_TOOL, chart_run
+from .report import (
+    bse_shp_extract,
+    bse_cg_extract_range,
+    BSE_SHP_EXTRACT_TOOL,
+    BSE_CG_EXTRACT_TOOL,
+    bse_ar_extract,
+    BSE_AR_EXTRACT_TOOL,
+)
+from .upstox import upstox_fetch_candles, UPSTOX_FETCH_CANDLES_TOOL
 
 # ----------------- Pydantic schemas -----------------
 class ExaSearchInput(BaseModel):
@@ -32,6 +41,12 @@ ALL_TOOLS = {
     "exa_live_search": exa_live_search_func,
     # Fix: chart_run returns dict already suitable for /agent/stream
     "chart_generate": chart_run,
+    # Reports (BSE)
+    "bse_shp_extract": bse_shp_extract,
+    "bse_cg_extract": bse_cg_extract_range,
+    "bse_ar_extract": bse_ar_extract,
+    # Market data
+    "upstox_fetch_candles": upstox_fetch_candles,
 }
 
 
@@ -41,6 +56,12 @@ STRUCTURED_TOOLS = {
     "fetch_url": StructuredTool.from_function(func=fetch_url_func, name="fetch_url", description="Fetch a web page and return a concise text snippet.", args_schema=FetchUrlInput),
     "exa_live_search": StructuredTool.from_function(func=exa_live_search_func, name="exa_live_search", description="Live search using EXA.", args_schema=ExaLiveSearchInput),
     "chart_generate": CHART_GENERATE_TOOL,
+    # Reports (BSE)
+    "bse_shp_extract": BSE_SHP_EXTRACT_TOOL,
+    "bse_cg_extract": BSE_CG_EXTRACT_TOOL,
+    "bse_ar_extract": BSE_AR_EXTRACT_TOOL,
+    # Market data
+    "upstox_fetch_candles": UPSTOX_FETCH_CANDLES_TOOL,
 }
 
 # ----------------- Tool categories -----------------
@@ -48,6 +69,8 @@ TOOL_CATEGORIES: Dict[str, List[str]] = {
     "web_search": ["exa_search", "exa_live_search", "fetch_url"],
     "similarity": ["exa_find_similar"],
     "charts": ["chart_generate"],
+    "reports": ["bse_shp_extract", "bse_cg_extract", "bse_ar_extract"],
+    "market_data": ["upstox_fetch_candles"],
 }
 
 def load_tools(use_cases: List[str] | None = None, structured: bool = False):

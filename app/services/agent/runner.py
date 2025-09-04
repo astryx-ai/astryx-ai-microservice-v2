@@ -132,8 +132,11 @@ def _unwrap_answer_container(obj: dict | list) -> dict | list:
 
 # System instruction for hybrid Chat + Chart via LangGraph tools
 SYSTEM_SPEC = (
-    "You can chat and you can generate charts.\n"
+    "You can chat, you can generate charts, and you can fetch BSE filings.\n"
     "If the user asks for a chart (graph/plot/visualize), call the 'chart_generate' tool.\n"
+    "If the user asks about BSE Shareholding Pattern, call 'bse_shp_extract'. For Corporate Governance reports, call 'bse_cg_extract'.\n"
+    "For Annual Reports or AR PDFs, call 'bse_ar_extract'.\n"
+    "For market price history/candles or OHLC data, call 'upstox_fetch_candles' with an instrument_key or identifiers (nse_symbol/bse_code/isin/company_name).\n"
     "If you need facts, briefly use EXA tools first, then pass a short 'supporting_input' to 'chart_generate'.\n"
     "When a chart is requested, your FINAL message must be ONLY this JSON object (no markdown/code fences, not wrapped in quotes, use double quotes):\n"
     "{ \"answer\": { \"event\": \"chart_data\", \"charts\": [ { \"type\": \"pie|bar|line|area|scatter\", \"data\": { \"labels\": string[], \"values\": number[] }, \"title\": string } ] } }"
@@ -142,7 +145,7 @@ SYSTEM_SPEC = (
 
 # -------- Non-streaming agent response (all charts) --------
 def agent_answer(question: str, user_id: str | None = None, chat_id: str | None = None):
-    agent = build_agent(use_cases=["web_search", "similarity", "charts"], structured=True)
+    agent = build_agent(use_cases=["web_search", "similarity", "charts", "reports", "market_data"], structured=True)
     system_msg = SystemMessage(content=SYSTEM_SPEC)
     user_msg = HumanMessage(content=question)
     context_msgs = get_context(chat_id, question) if chat_id else []
@@ -177,7 +180,7 @@ def agent_answer(question: str, user_id: str | None = None, chat_id: str | None 
 
 # -------- Streaming agent response --------
 async def agent_stream_response(question: str, user_id: str | None = None, chat_id: str | None = None):
-    agent = build_agent(use_cases=["web_search", "similarity", "charts"], structured=True)
+    agent = build_agent(use_cases=["web_search", "similarity", "charts", "reports", "market_data"], structured=True)
     system = SystemMessage(content=SYSTEM_SPEC)
     user = HumanMessage(content=question)
     context_msgs = get_context(chat_id, question) if chat_id else []

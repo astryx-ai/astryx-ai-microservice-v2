@@ -25,6 +25,11 @@ class Settings(BaseSettings):
 
     EXA_API_KEY: str
 
+    # Optional Upstox credentials (OAuth access token preferred)
+    UPSTOX_ACCESS_TOKEN: str | None = None
+    UPSTOX_API_KEY: str | None = None
+    UPSTOX_API_SECRET: str | None = None
+
 
 settings = Settings()
 
