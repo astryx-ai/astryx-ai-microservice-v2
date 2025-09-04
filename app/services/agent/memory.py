@@ -20,6 +20,7 @@ def _deduplicate_messages(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def build_langchain_messages(raw_items: List[Dict[str, Any]]) -> List[Any]:
     # Reverse to chronological order (oldest first) for conversation flow
     items = list(reversed(raw_items))
+    print(f"[Memory] Converting {len(items)} items into LangChain messages")
     lc_messages: List[Any] = []
     for it in items:
         content = it.get("content") or ""
@@ -32,8 +33,10 @@ def build_langchain_messages(raw_items: List[Dict[str, Any]]) -> List[Any]:
 
 
 def get_context(chat_id: str, query_text: str, recency_limit: int = 10, retrieval_limit: int = 5) -> List[Any]:
+    print(f"[Memory] get_context called | chat_id={chat_id}, recency_limit={recency_limit}, retrieval_limit={retrieval_limit}")
     emit_process({"message": "Looking through memory"})
     recent = fetch_recent_messages(chat_id, limit=recency_limit)
+    print(f"[Memory] fetched {len(recent)} recent messages")
     relevant: List[Dict[str, Any]] = []
     try:
         # Create embedding for semantic retrieval
@@ -42,10 +45,13 @@ def get_context(chat_id: str, query_text: str, recency_limit: int = 10, retrieva
         query_embedding = embedding_model.embed_query(query_text)
         emit_process({"message": "Searching memory for relevant context"})
         relevant = fetch_relevant_messages(chat_id, query_embedding=query_embedding, limit=retrieval_limit)
+        print(f"[Memory] fetched {len(relevant)} relevant messages via embeddings")
     except Exception:
         # If embeddings or DB not configured, fall back to recency-only without failing
+        print("[Memory] embeddings or DB lookup failed; using recency-only context")
         pass
     merged = _deduplicate_messages(recent + relevant)
+    print(f"[Memory] merged context size after dedup: {len(merged)}")
     return build_langchain_messages(merged)
 
 
