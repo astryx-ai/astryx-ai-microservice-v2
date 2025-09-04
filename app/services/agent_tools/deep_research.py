@@ -2,6 +2,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 from app.services.llms.azure_openai import chat_model
+from app.utils.stream_utils import emit_process
 from .exa import (
     exa_search as _exa_search,
     exa_live_search as _exa_live_search,
@@ -96,6 +97,11 @@ def run_deep_research(query: str, max_chunks_per_url: int = 3, chunk_size: int =
             f"- Proper citations"
         )
         
+        try:
+            emit_process({"message": "Deep Research started"})
+        except Exception:
+            pass
+
         result = agent.invoke({"messages": [
             {"type": "system", "content": system},
             {"type": "human", "content": user},
@@ -116,6 +122,12 @@ def run_deep_research(query: str, max_chunks_per_url: int = 3, chunk_size: int =
         else:
             content = str(result)
             
+        # Emit completion
+        try:
+            emit_process({"message": "Deep Research completed"})
+        except Exception:
+            pass
+
         return content if content else "No research results were generated."
         
     except Exception as e:

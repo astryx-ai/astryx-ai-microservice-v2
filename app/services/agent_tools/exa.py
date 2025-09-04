@@ -4,7 +4,7 @@ from langchain_exa import ExaSearchResults, ExaFindSimilarResults, ExaSearchRetr
 from app.config import settings
 import httpx
 from bs4 import BeautifulSoup
-from app.stream_utils import emit_process
+from app.utils.stream_utils import emit_process
 from .helper_tools import needs_recency_injection, inject_datetime_into_query
 
 
@@ -171,7 +171,11 @@ def fetch_url_text(url: str, chunk_index: int = 1, chunk_size: int = 4000, max_t
     Returns: "Chunk i/N | <title> (<url>)\n<text>"
     """
     print(f"[Tool] fetch_url_text called | url='{url}', chunk_index={chunk_index}, chunk_size={chunk_size}, max_total_chars={max_total_chars}")
-    emit_process({"message": f"Fetching (chunked) {url} [chunk {chunk_index}]"})
+    # Emit only the link being fetched, suppress chunk numbers in user-visible stream
+    try:
+        emit_process({"message": f"Fetching: {url}"})
+    except Exception:
+        pass
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; AstryxBot/1.0)"}
         resp = httpx.get(url, headers=headers, timeout=20.0, follow_redirects=True)

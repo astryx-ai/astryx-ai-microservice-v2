@@ -1,3 +1,30 @@
+from contextvars import ContextVar
+from typing import Callable, Optional, Dict, Any
+
+
+_process_emitter: ContextVar[Optional[Callable[[Dict[str, Any]], None]]] = ContextVar("process_emitter", default=None)
+
+
+def set_process_emitter(emitter: Optional[Callable[[Dict[str, Any]], None]]):
+    _process_emitter.set(emitter)
+
+
+def emit_process(event: Dict[str, Any] | str):
+    emitter = _process_emitter.get()
+    if not emitter:
+        return
+    # Normalize to the streaming schema: {"event":"process","message":"..."}
+    if isinstance(event, str):
+        payload: Dict[str, Any] = {"event": "process", "message": event}
+    else:
+        message_text = event.get("message") if isinstance(event, dict) else None
+        payload = {"event": "process", "message": str(message_text or "")}
+    try:
+        emitter(payload)
+    except Exception:
+        pass
+
+
 def normalize_stream_event(event) -> str:
     """Extract streamed text token/content from heterogeneous event payloads.
     Returns empty string when no user-visible text is present.

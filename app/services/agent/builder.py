@@ -1,164 +1,169 @@
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, END
-# SystemMessage and HumanMessage imported in runner.py where needed
+from langchain_core.messages import AIMessage, SystemMessage
+
 from app.services.llms.azure_openai import chat_model
 from app.services.agent_tools.registry import load_tools
-from app.services.agent_tools.helper_tools import requires_deep_research
+from app.services.agent_tools.helper_tools import decide_route
+from app.utils.stream_utils import emit_process
 from app.services.agent_tools.deep_research import run_deep_research
 
 
 def _route_decision(state):
-    """Decide between standard search and deep research."""
+    """Decide which subgraph to route to and persist route into the state."""
     messages = state.get("messages", [])
     if not messages:
         print("[Router] No messages, routing to standard")
+        state["route"] = "standard"
+        state["decision_reason"] = "No messages"
         return "standard"
-    
-    # Count previous messages to determine if there's conversation context
-    message_count = len([msg for msg in messages if hasattr(msg, 'type') and msg.type in ["human", "ai"]])
-    has_context = message_count > 2  # More than system + current user message
-    
-    # Get the user's question from the last human message
-    user_message = None
+
+    user_and_ai_messages = [
+        msg for msg in messages if hasattr(msg, "type") and msg.type in ["human", "ai"]
+    ]
+    has_context = len(user_and_ai_messages) > 2
+
+    # Extract user query (last human message)
+    user_query = ""
     for msg in reversed(messages):
-        if hasattr(msg, 'type') and msg.type == "human":
+        if hasattr(msg, "type") and msg.type == "human":
             content = msg.content
-            # Clean up the task format if present
-            if content.startswith("Task: "):
-                user_message = content[6:]  # Remove "Task: " prefix
-            else:
-                user_message = content
+            user_query = content[6:] if content.startswith("Task: ") else content
             break
-    
-    if user_message and requires_deep_research(user_message, has_context):
-        print("[Router] Routing to deep_research")
-        return "deep_research"
-    else:
-        print("[Router] Routing to standard")
-        return "standard"
+
+    # Cached decision check
+    if state.get("route") and state.get("query") == user_query:
+        cached_route = state["route"]
+        print(f"[Router] Using cached route: {cached_route}")
+        return cached_route
+
+    # 🔑 Call the centralized router
+    try:
+        available_routes = ["standard", "deep_research"]
+        chosen_route, reason = decide_route(
+            user_query,
+            has_context,
+            context_messages=user_and_ai_messages,
+            available_routes=available_routes,
+        )
+        print(f"[Router] Decision successful: {chosen_route}")
+    except Exception as route_error:
+        print(f"[Router] Decision failed: {route_error}")
+        chosen_route, reason = "standard", f"routing error: {route_error}"
+
+    # Persist decision in state
+    state["route"] = chosen_route
+    state["decision_reason"] = reason
+    state["query"] = user_query
+    state["context"] = user_and_ai_messages
+
+    # Optional: emit process notification
+    if chosen_route != "standard":
+        try:
+            emit_process({"message": f"Invoking {chosen_route.replace('_', ' ')}"})
+        except Exception:
+            pass
+
+    print(f"[Router] Routing to {chosen_route} | reason={reason}")
+    return chosen_route
 
 
 def _standard_agent_node(state):
     """Standard agent node for simple queries."""
     print("[StandardAgent] Processing with standard search tools")
     messages = state.get("messages", [])
-    
-    # Check if this is a context-aware query (references previous conversation)
+
+    # Last human message
     user_question = ""
     for msg in reversed(messages):
-        if hasattr(msg, 'type') and msg.type == "human":
+        if hasattr(msg, "type") and msg.type == "human":
             content = msg.content
-            if content.startswith("Task: "):
-                user_question = content[6:]
-            else:
-                user_question = content
+            user_question = content[6:] if content.startswith("Task: ") else content
             break
-    
-    # Count conversation context
-    context_messages = [msg for msg in messages if hasattr(msg, 'type') and msg.type in ["human", "ai"]]
+
+    # Context awareness check
+    context_messages = [m for m in messages if hasattr(m, "type") and m.type in ["human", "ai"]]
     has_context = len(context_messages) > 2
-    
-    # If it's a context-aware query, add enhanced system prompt
-    if has_context and any(ref in user_question.lower() for ref in ["you mentioned", "companies", "those", "these", "them", "comparison"]):
+
+    if has_context and any(
+        ref in user_question.lower()
+        for ref in ["you mentioned", "companies", "those", "these", "them", "comparison"]
+    ):
         print("[StandardAgent] Using context-aware mode")
-        # Create enhanced system message for context-aware queries
         enhanced_system = (
-            "You are a financial AI assistant with access to the conversation history. "
-            "The user is asking a follow-up question that references previous discussion. "
-            "Use web search tools if you need additional current information, but primarily "
-            "focus on the conversation context to answer questions about previously mentioned companies or topics. "
-            "For comparisons, use the information already discussed in the conversation."
+            "You are a financial AI assistant with access to conversation history. "
+            "Focus on previously discussed topics for follow-ups and comparisons. "
+            "Use web search only if truly necessary for fresh data."
         )
-        
-        # Update the system message in the state
-        updated_messages = []
-        for msg in messages:
-            if hasattr(msg, 'type') and msg.type == "system":
-                # Replace system message with context-aware version
-                from langchain_core.messages import SystemMessage
-                updated_messages.append(SystemMessage(content=enhanced_system))
-            else:
-                updated_messages.append(msg)
-        
-        updated_state = {"messages": updated_messages}
-    else:
-        updated_state = state
-    
+        updated_messages = [
+            SystemMessage(content=enhanced_system) if getattr(msg, "type", None) == "system" else msg
+            for msg in messages
+        ]
+        state = {"messages": updated_messages}
+
     llm = chat_model(temperature=0.2)
     tools = load_tools(use_cases=["web_search"], structured=True)
     agent = create_react_agent(llm, tools)
-    return agent.invoke(updated_state)
+    return agent.invoke(state)
 
 
 def _deep_research_node(state):
     """Deep research node for comprehensive analysis."""
     print("[DeepResearch] Processing with deep research subgraph")
     messages = state.get("messages", [])
-    
-    # Extract the user's question from the last human message
+
+    # Extract user question
     user_question = ""
     for msg in reversed(messages):
-        if hasattr(msg, 'type') and msg.type == "human":
+        if hasattr(msg, "type") and msg.type == "human":
             content = msg.content
-            # Clean up the task format if present
-            if content.startswith("Task: "):
-                user_question = content[6:]  # Remove "Task: " prefix
-            else:
-                user_question = content
+            user_question = content[6:] if content.startswith("Task: ") else content
             break
-    
+
     print(f"[DeepResearch] Extracted user question: '{user_question}'")
-    
+
     try:
-        # Run deep research with conversation context
-        context_messages = [msg for msg in messages if hasattr(msg, 'type') and msg.type in ["human", "ai"]]
+        context_messages = [m for m in messages if hasattr(m, "type") and m.type in ["human", "ai"]]
         research_result = run_deep_research(user_question, context_messages=context_messages)
-        print(f"[DeepResearch] Research completed, result length: {len(research_result) if research_result else 0}")
-        
-        # Ensure we have a valid result
+
         if not research_result or not isinstance(research_result, str):
-            research_result = "I apologize, but I encountered an issue while conducting the deep research. Please try again."
-        
-        # Create an AI message with the research result
-        from langchain_core.messages import AIMessage
-        ai_message = AIMessage(content=research_result)
-        
-        # Return state with the new message
-        return {"messages": messages + [ai_message]}
-        
+            research_result = (
+                "I encountered an issue while conducting the deep research. Please try again."
+            )
+
+        return {"messages": messages + [AIMessage(content=research_result)]}
+
     except Exception as e:
-        print(f"[DeepResearch] Error during research: {e}")
-        from langchain_core.messages import AIMessage
-        ai_message = AIMessage(content=f"I apologize, but I encountered an error while conducting the deep research: {str(e)}")
-        return {"messages": messages + [ai_message]}
+        return {"messages": messages + [AIMessage(content=f"Deep research error: {str(e)}")]}
 
 
 def build_routed_agent():
-    """Build a LangGraph with routing between standard and deep research."""
-    # Create the graph
+    """Build a LangGraph with routing between multiple subgraphs."""
     graph = StateGraph(dict)
-    
-    # Add nodes - no router node needed
+
+    # Nodes
     graph.add_node("standard", _standard_agent_node)
     graph.add_node("deep_research", _deep_research_node)
-    
-    # Set conditional entry point based on the routing decision
+    # Future: graph.add_node("chart_viz", _chart_viz_node)
+    # Future: graph.add_node("legal_analysis", _legal_analysis_node)
+
+    # Router → nodes
     graph.add_conditional_edges(
-        "__start__",  # Use the built-in start node
+        "__start__",
         _route_decision,
         {
             "standard": "standard",
-            "deep_research": "deep_research"
-        }
+            "deep_research": "deep_research",
+        },
     )
-    
-    # Add edges to END
+
+    # Endpoints
     graph.add_edge("standard", END)
     graph.add_edge("deep_research", END)
-    
+
     return graph.compile()
 
 
 def build_agent(use_cases: list[str] | None = None, structured: bool = False):
-    """Legacy function for backward compatibility - now returns the routed agent."""
+    """Legacy compatibility shim."""
     return build_routed_agent()

@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from app.services.db.messages import fetch_recent_messages, fetch_relevant_messages
 from app.services.llms.azure_openai import embedder
-from app.stream_utils import emit_process
+from app.utils.stream_utils import emit_process
 
 
 def _deduplicate_messages(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

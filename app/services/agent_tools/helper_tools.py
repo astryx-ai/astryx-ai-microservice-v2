@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Iterable, Any, List, Tuple
+import json
+
+# LLM-based decision support
+from app.services.llms.azure_openai import decision_model
+from langchain_core.messages import SystemMessage, HumanMessage
 
 
 def get_current_datetime_string() -> str:
@@ -61,60 +66,114 @@ def inject_datetime_into_query(query: str) -> str:
     return injected
 
 
-def requires_deep_research(query: str, has_context: bool = False) -> bool:
-    """Determine if a query requires deep research based on keywords and complexity."""
-    print(f"[Helper] Evaluating if query requires deep research: '{query}' (has_context: {has_context})")
-    
-    query_lower = query.lower()
-    
-    # Quick follow-up questions that should use standard search
-    simple_follow_up_patterns = [
-        "quick comparison", "quick summary", "what we discussed", "what did we", 
-        "summarize", "summary", "briefly", "in short", "you mentioned",
-        "companies you mentioned", "what about", "how about", "tell me about"
-    ]
-    
-    for pattern in simple_follow_up_patterns:
-        if pattern in query_lower:
-            print(f"[Helper] Standard search sufficient - found simple follow-up pattern: '{pattern}'")
-            return False
-    
-    # If query references previous context and is short, likely a follow-up
-    if has_context and len(query.split()) <= 10:
-        context_references = ["you mentioned", "companies", "those", "these", "them", "it", "that"]
-        if any(ref in query_lower for ref in context_references):
-            print("[Helper] Standard search sufficient - short query with context reference")
-            return False
-    
-    # Keywords that indicate comprehensive analysis is needed (more selective)
-    deep_research_indicators = [
-        "deep research", "comprehensive analysis", "detailed analysis",
-        "market analysis", "industry overview", "strategic analysis",
-        "competitive landscape", "business model analysis"
-    ]
-    
-    # Check for explicit deep research requests
-    for indicator in deep_research_indicators:
-        if indicator in query_lower:
-            print(f"[Helper] Deep research required - found explicit indicator: '{indicator}'")
-            return True
-    
-    # Complex multi-topic queries (more restrictive)
-    if ("and" in query_lower and len(query.split()) > 12) or len(query.split()) > 15:
-        print("[Helper] Deep research required - very complex query")
-        return True
-    
-    # Check for initial research requests (without context)
-    if not has_context:
-        initial_research_patterns = [
-            "top", "best", "leading", "major", "key players", "market leaders",
-            "future outlook", "growth prospects", "market trends"
-        ]
-        word_count = len(query.split())
-        if word_count > 8 and any(pattern in query_lower for pattern in initial_research_patterns):
-            print("[Helper] Deep research required - initial comprehensive research request")
-            return True
-    
-    print("[Helper] Standard search sufficient for this query")
-    return False
+def _summarize_context_for_router(messages: List[Any] | None) -> str:
+    if not messages:
+        return ""
+    parts: List[str] = []
+    for m in messages[-6:]:  # last few turns
+        try:
+            role = getattr(m, "type", "")
+            content = (getattr(m, "content", None) or "")
+            if not content:
+                continue
+            if role == "system":
+                continue
+            role_name = "User" if role == "human" else "Assistant"
+            parts.append(f"{role_name}: {content[:400]}")
+        except Exception:
+            continue
+    return "\n".join(parts[-4:])
+def _llm_route_decision_multi(
+    query: str,
+    has_context: bool,
+    context_summary: str,
+    available_routes: List[str],
+) -> Tuple[str, str]:
+    """
+    Multi-route LLM decision.
+    Returns (route: str, reason: str).
+    """
+    try:
+        model = decision_model(temperature=0.0)
+        if hasattr(model, "streaming"):
+            model.streaming = False
 
+        sys = (
+            "You are a routing controller. Your job is to pick exactly ONE route "
+            "from the provided list of available subgraphs.\n"
+            "Pick the subgraph that best matches the task. "
+            "Respond strictly as JSON with 'route' and 'reason'."
+        )
+
+        user = (
+            f"Query: {query}\n"
+            f"HasContext: {has_context}\n"
+            f"ContextSummary:\n{context_summary or '(none)'}\n"
+            f"AvailableRoutes: {available_routes}\n"
+            "Return JSON: {\"route\": \"<one_of_available_routes>\", \"reason\": \"...\"}"
+        )
+
+        print("[Helper] Calling multi-route decision model (non-streaming)")
+        resp = model.invoke([SystemMessage(content=sys), HumanMessage(content=user)])
+        text = getattr(resp, "content", "") if hasattr(resp, "content") else str(resp)
+
+        data = json.loads(text) if text.strip().startswith("{") else {}
+        route = str(data.get("route") or "standard")
+        reason = str(data.get("reason") or "")
+
+        if route not in available_routes:
+            print(f"[Helper] Invalid route '{route}', defaulting to 'standard'")
+            route = "standard"
+
+        print(f"[Helper] LLM chose route={route} | reason={reason}")
+        return route, reason
+    except Exception as e:
+        print(f"[Helper] Multi-route LLM routing failed, fallback: {e}")
+        return "standard", "routing model unavailable"
+
+
+def decide_route(
+    query: str,
+    has_context: bool = False,
+    context_messages: List[Any] | None = None,
+    available_routes: List[str] | None = None,
+) -> Tuple[str, str]:
+    """
+    Generic router: choose one route among available subgraphs.
+    Default routes: ['standard', 'deep_research'].
+    Returns (route, reason).
+    """
+    if available_routes is None:
+        available_routes = ["standard", "deep_research"]
+
+    context_summary = _summarize_context_for_router(context_messages)
+
+    # First try LLM decision
+    route, reason = _llm_route_decision_multi(query, has_context, context_summary, available_routes)
+    if route:
+        return route, reason
+
+    # Heuristic fallback
+    if "deep research" in query.lower() or "comprehensive analysis" in query.lower():
+        return "deep_research", "explicit deep research requested"
+    if len(query.split()) > 15:
+        return "deep_research", "query too complex for standard route"
+
+    return "standard", "default heuristic"
+
+# New generic helper for checking any subgraph
+def requires_route(
+    route_name: str,
+    query: str,
+    has_context: bool = False,
+    context_messages: List[Any] | None = None,
+    available_routes: List[str] | None = None,
+) -> bool:
+    """
+    Generic version of requires_deep_research.
+    Example:
+      requires_route("chart_viz", query, context_messages=msgs)
+    """
+    chosen, reason = decide_route(query, has_context, context_messages, available_routes)
+    print(f"[Helper] requires_route('{route_name}') → chosen={chosen} reason={reason}")
+    return chosen == route_name
