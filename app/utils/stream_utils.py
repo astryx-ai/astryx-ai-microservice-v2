@@ -13,10 +13,14 @@ def emit_process(event: Dict[str, Any] | str):
     emitter = _process_emitter.get()
     if not emitter:
         return
-    # Normalize to the streaming schema: {"event":"process","message":"..."}
+    # Normalize to the streaming schema
     if isinstance(event, str):
         payload: Dict[str, Any] = {"event": "process", "message": event}
+    elif isinstance(event, dict) and event.get("event") == "chart_data":
+        # Handle chart_data events specially
+        payload = {"event": "chart_data", "chart": event.get("chart", {})}
     else:
+        # Regular process message
         message_text = event.get("message") if isinstance(event, dict) else None
         payload = {"event": "process", "message": str(message_text or "")}
     try:

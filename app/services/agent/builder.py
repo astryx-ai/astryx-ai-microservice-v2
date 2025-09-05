@@ -7,6 +7,7 @@ from app.services.agent_tools.registry import load_tools
 from app.services.agent_tools.helper_tools import decide_route
 from app.utils.stream_utils import emit_process
 from app.services.agent_tools.deep_research import run_deep_research
+from app.services.agent_tools.chart_viz import run_chart_viz
 
 
 def _route_decision(state):
@@ -39,7 +40,7 @@ def _route_decision(state):
 
     # 🔑 Call the centralized router
     try:
-        available_routes = ["standard", "deep_research"]
+        available_routes = ["standard", "deep_research", "chart_viz"]
         chosen_route, reason = decide_route(
             user_query,
             has_context,
@@ -137,6 +138,36 @@ def _deep_research_node(state):
         return {"messages": messages + [AIMessage(content=f"Deep research error: {str(e)}")]}
 
 
+def _chart_viz_node(state):
+    """Chart visualization node for creating data visualizations."""
+    print("[ChartViz] Processing with chart visualization subgraph")
+    messages = state.get("messages", [])
+
+    # Extract user question
+    user_question = ""
+    for msg in reversed(messages):
+        if hasattr(msg, "type") and msg.type == "human":
+            content = msg.content
+            user_question = content[6:] if content.startswith("Task: ") else content
+            break
+
+    print(f"[ChartViz] Extracted user question: '{user_question}'")
+
+    try:
+        context_messages = [m for m in messages if hasattr(m, "type") and m.type in ["human", "ai"]]
+        chart_result = run_chart_viz(user_question, context_messages=context_messages)
+
+        if not chart_result or not isinstance(chart_result, str):
+            chart_result = (
+                "I encountered an issue while creating the chart visualization. Please try again."
+            )
+
+        return {"messages": messages + [AIMessage(content=chart_result)]}
+
+    except Exception as e:
+        return {"messages": messages + [AIMessage(content=f"Chart visualization error: {str(e)}")]}
+
+
 def build_routed_agent():
     """Build a LangGraph with routing between multiple subgraphs."""
     graph = StateGraph(dict)
@@ -144,7 +175,7 @@ def build_routed_agent():
     # Nodes
     graph.add_node("standard", _standard_agent_node)
     graph.add_node("deep_research", _deep_research_node)
-    # Future: graph.add_node("chart_viz", _chart_viz_node)
+    graph.add_node("chart_viz", _chart_viz_node)
     # Future: graph.add_node("legal_analysis", _legal_analysis_node)
 
     # Router → nodes
@@ -154,12 +185,14 @@ def build_routed_agent():
         {
             "standard": "standard",
             "deep_research": "deep_research",
+            "chart_viz": "chart_viz",
         },
     )
 
     # Endpoints
     graph.add_edge("standard", END)
     graph.add_edge("deep_research", END)
+    graph.add_edge("chart_viz", END)
 
     return graph.compile()
 

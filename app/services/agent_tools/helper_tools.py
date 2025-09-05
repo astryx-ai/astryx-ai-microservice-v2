@@ -101,6 +101,10 @@ def _llm_route_decision_multi(
         sys = (
             "You are a routing controller. Your job is to pick exactly ONE route "
             "from the provided list of available subgraphs.\n"
+            "Route Guidelines:\n"
+            "- 'chart_viz': For requests asking to create charts, graphs, visualizations, or show data in visual format\n"
+            "- 'deep_research': For comprehensive analysis requiring multi-step research and synthesis\n"
+            "- 'standard': For quick searches, follow-ups, and general queries\n"
             "Pick the subgraph that best matches the task. "
             "Respond strictly as JSON with 'route' and 'reason'."
         )
@@ -140,11 +144,11 @@ def decide_route(
 ) -> Tuple[str, str]:
     """
     Generic router: choose one route among available subgraphs.
-    Default routes: ['standard', 'deep_research'].
+    Default routes: ['standard', 'deep_research', 'chart_viz'].
     Returns (route, reason).
     """
     if available_routes is None:
-        available_routes = ["standard", "deep_research"]
+        available_routes = ["standard", "deep_research", "chart_viz"]
 
     context_summary = _summarize_context_for_router(context_messages)
 
@@ -154,7 +158,19 @@ def decide_route(
         return route, reason
 
     # Heuristic fallback
-    if "deep research" in query.lower() or "comprehensive analysis" in query.lower():
+    query_lower = query.lower()
+    
+    # Check for chart/visualization requests
+    chart_keywords = [
+        "chart", "graph", "visualization", "visualize", "plot", "bar chart", 
+        "pie chart", "line chart", "show data", "create chart", "display data",
+        "visual", "dashboard", "infographic"
+    ]
+    if any(keyword in query_lower for keyword in chart_keywords):
+        return "chart_viz", "explicit chart/visualization requested"
+    
+    # Check for deep research requests
+    if "deep research" in query_lower or "comprehensive analysis" in query_lower:
         return "deep_research", "explicit deep research requested"
     if len(query.split()) > 15:
         return "deep_research", "query too complex for standard route"
