@@ -15,4 +15,3 @@ def get_psycopg_connection() -> Optional[psycopg.Connection]:
     return psycopg.connect(dsn)
 
 
-

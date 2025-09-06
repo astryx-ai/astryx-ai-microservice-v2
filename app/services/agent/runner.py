@@ -2,108 +2,18 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from starlette.responses import StreamingResponse
 import json
 
-from app.services.agent_tools.helper_tools import decide_route
+from app.agent_tools.helper_tools import decide_route
+from app.services.agent.state import AVAILABLE_ROUTES
 from .builder import build_agent
 from .memory import get_context
-from app.utils.stream_utils import normalize_stream_event, set_process_emitter, emit_process
-from app.services.agent_tools.formatter import format_financial_content
+from app.utils.stream_utils import normalize_stream_event, set_process_emitter
+from app.agent_tools.formatter import format_financial_content
 
 
-def _extract_chart_data(content: str):
-    """
-    Robust extractor: finds the first JSON object whose top-level "type" == "bar-standard",
-    using a brace walker that respects JSON strings and escapes. Returns (parsed_json, remaining_text).
-    If none found, returns (None, original_content).
-    Also removes a one-line header immediately preceding the JSON if it looks like a chart header.
-    """
-    try:
-        text = content or ""
-        # helper to remove a single-line header preceding `start_idx`
-        def remove_preceding_header(s: str, start_idx: int):
-            prev_nl = s.rfind('\n', 0, start_idx)
-            if prev_nl == -1:
-                prev_nl = 0
-            header = s[prev_nl:start_idx].strip().lower()
-            keywords = [
-                'below is', 'json chart', 'chart visualization', 'below is the json',
-                'below is the chart', 'chart data', 'json chart visualization',
-                'below is the json chart visualization'
-            ]
-            if (any(kw in header for kw in keywords) and len(header) < 160) or (header.endswith(':') and len(header) < 80):
-                return prev_nl
-            return start_idx
-
-        i = 0
-        n = len(text)
-        while i < n:
-            # find next opening brace
-            start = text.find('{', i)
-            if start == -1:
-                break
-
-            # walk forward to find matching closing brace, respecting strings/escapes
-            j = start
-            brace_count = 0
-            in_string = False
-            escape = False
-            end_index = -1
-            while j < n:
-                ch = text[j]
-                if ch == '"' and not escape:
-                    in_string = not in_string
-                    j += 1
-                    escape = False
-                    continue
-                if in_string:
-                    if ch == '\\' and not escape:
-                        escape = True
-                    else:
-                        escape = False
-                    j += 1
-                    continue
-                # not in string
-                if ch == '{':
-                    brace_count += 1
-                elif ch == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        end_index = j
-                        break
-                j += 1
-
-            if end_index == -1:
-                # couldn't find a matching end for this opening brace; move past it
-                i = start + 1
-                continue
-
-            candidate = text[start:end_index + 1].strip()
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict) and parsed.get("type") == "bar-standard":
-                    # remove any short header immediately before the JSON
-                    new_start = remove_preceding_header(text, start)
-                    remaining = (text[:new_start] + text[end_index + 1:]).strip()
-                    # collapse excessive blank lines
-                    remaining = '\n\n'.join([p.strip() for p in remaining.splitlines()]).strip()
-                    return parsed, remaining
-            except Exception:
-                # not valid JSON here -- continue scanning
-                pass
-
-            i = start + 1
-
-    except Exception as e:
-        print(f"[Runner] Chart extraction error: {e}")
-
-    return None, content
-
-
-def _process_chart_content(content: str, route: str):
-    """Process content and extract chart data if it's from chart_viz route."""
-    if route == "chart_viz":
-        chart_data, remaining_content = _extract_chart_data(content)
-        return chart_data, remaining_content
-    return None, content
+"""
+Note: Chart JSON extraction/processing removed. Chart emission now happens via chart tools
+and process emitter inside chart_viz. Runner only formats and streams text output.
+"""
 
 
 # Agent responses without streaming
@@ -129,7 +39,7 @@ def agent_answer(question: str, user_id: str | None = None, chat_id: str | None 
 
     print("[Runner] Pre-computing routing decision for non-streaming")
     try:
-        available_routes = ["standard", "deep_research", "chart_viz"]
+        available_routes = AVAILABLE_ROUTES
         route, reason = decide_route(question, has_context, context_messages=user_and_ai_messages, available_routes=available_routes)
         print(f"[Runner] Non-streaming route decision successful: {route}")
     except Exception as route_error:
@@ -162,18 +72,8 @@ def agent_answer(question: str, user_id: str | None = None, chat_id: str | None 
     else:
         raw_content = str(result)
 
-    # If this route was chart_viz, extract chart JSON and emit it via emit_process.
-    if state.get("route") == "chart_viz":
-        chart, remaining = _process_chart_content(raw_content, "chart_viz")
-        if chart:
-            try:
-                # emit chart_data meta for non-streaming clients that listen to process events
-                emit_process({"event": "chart_data", "chart": chart})
-            except Exception as e:
-                print(f"[Runner] emit_process failed in agent_answer: {e}")
-        formatted_content = format_financial_content(remaining)
-    else:
-        formatted_content = format_financial_content(raw_content)
+    # Format the content; chart emission is handled by tools inside chart_viz
+    formatted_content = format_financial_content(raw_content)
 
     return formatted_content
 
@@ -212,7 +112,7 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
 
     print("[Runner] Pre-computing routing decision to avoid streaming leaks")
     try:
-        available_routes = ["standard", "deep_research", "chart_viz"]
+        available_routes = AVAILABLE_ROUTES
         chosen_route, reason = decide_route(user_query, has_context, context_messages=user_and_ai_messages, available_routes=available_routes)
         print(f"[Runner] Route decision successful: {chosen_route}")
     except Exception as route_error:
@@ -355,20 +255,7 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
                 if raw_content:
                     print(f"[Runner] Got invoke response, length: {len(raw_content)}")
 
-                    # If route is chart_viz, attempt to extract chart JSON locally in case the module didn't
-                    # or its emit_process wasn't captured for some reason.
-                    if initial_state.get("route") == "chart_viz":
-                        chart, remaining = _process_chart_content(raw_content, "chart_viz")
-                        if chart:
-                            try:
-                                # Emit as meta so client can receive chart data as an event before tokens
-                                _pending_meta.append((json.dumps({"meta": {"event": "chart_data", "chart": chart}}) + "\n").encode("utf-8"))
-                                print("[Runner] Injected chart_data into pending meta")
-                            except Exception as e:
-                                print(f"[Runner] Failed to inject chart into meta: {e}")
-                        formatted_content = format_financial_content(remaining)
-                    else:
-                        formatted_content = format_financial_content(raw_content)
+                    formatted_content = format_financial_content(raw_content)
 
                     # Flush pending meta before streaming tokens
                     try:

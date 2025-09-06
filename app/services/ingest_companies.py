@@ -4,7 +4,7 @@ from supabase import Client
 
 from app.scrapper.companies_scraper import get_companies
 from app.config import settings
-from app.services.db.supabase import get_supabase_client, get_psycopg_connection
+from app.db.supabase import get_supabase_client, get_psycopg_connection
 
 
 def _supabase() -> Client:

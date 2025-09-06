@@ -1,15 +1,17 @@
-from typing import List, Dict
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 from langchain.tools import StructuredTool
 
-# Import tool implementations
-from .exa import (
+# Import tool implementations (tools-only here)
+from app.agent_tools.exa import (
     exa_search as _exa_search,
     exa_live_search as _exa_live_search,
     fetch_url_text as _fetch_url_text,
 )
+from app.agent_tools.chart_emit import emit_chart as _emit_chart
+from app.agent_tools.chart_emit import ChartPayloadInput as _ChartPayloadInput
 
-# Note: deep_research is now a proper subgraph, not a tool
+# Note: subgraphs are not tools
 
 
 # ---------- Pydantic schemas for structured tools ----------
@@ -31,7 +33,9 @@ class FetchUrlTextInput(BaseModel):
     max_total_chars: int = Field(120000, ge=5000, le=500000, description="Safety cap on total extracted characters")
 
 
-# DeepResearchInput removed - deep research is now a proper subgraph, not a tool
+class ChartEmitInput(BaseModel):
+    # Backward compatibility shim if referenced elsewhere
+    payload: Dict[str, Any] | None = None
 
 
 # ---------- Core tools (non-structured) ----------
@@ -39,6 +43,22 @@ ALL_TOOLS = {
     "exa_search": _exa_search,
     "exa_live_search": _exa_live_search,
     "fetch_url_text": _fetch_url_text,
+    "emit_chart": StructuredTool.from_function(
+        func=lambda payload: _emit_chart(payload),
+        name="emit_chart",
+        description=(
+            "Emit a chart_data event directly to the stream. Pass one argument named 'payload'"
+            " which is a JSON object containing the chart specification. You MAY call this tool"
+            " multiple times in a single run to emit multiple charts. Supported types include:"
+            " bar-standard, bar-multiple, bar-stacked, bar-negative, area-standard, area-linear,"
+            " area-stacked, line-standard, line-linear, line-multiple, line-dots, line-label,"
+            " pie-standard, pie-label, pie-interactive, pie-donut, radar-standard, radar-lines-only,"
+            " radar-multiple, radial-standard, radial-stacked, radial-progress. The payload must include"
+            " the required keys for the chosen type (e.g., title, description, dataKey/nameKey or groupedKeys,"
+            " and data: []). Returns empty string."
+        ),
+        args_schema=_ChartPayloadInput,
+    ),
 }
 
 
@@ -62,14 +82,19 @@ STRUCTURED_TOOLS = {
         description="Fetch a web page and return raw text in chunks without summarization.",
         args_schema=FetchUrlTextInput,
     ),
-# deep_research removed from tools - it's now a proper subgraph
+    "emit_chart": StructuredTool.from_function(
+        func=lambda payload: _emit_chart(payload),
+        name="emit_chart",
+        description="Emit a chart_data event from a generic payload after schema validation. Returns empty string.",
+        args_schema=_ChartPayloadInput,
+    ),
 }
 
 
 # ---------- Tool categories ----------
 TOOL_CATEGORIES: Dict[str, List[str]] = {
     "web_search": ["exa_search", "exa_live_search", "fetch_url_text"],
-    # "research" category removed - deep research is now handled at graph level
+    "chart": ["emit_chart"],
 }
 
 
@@ -100,5 +125,3 @@ def load_tools(use_cases: List[str] | None = None, structured: bool = False):
             seen.add(n)
     print(f"[Registry] load_tools selected: {[getattr(t, 'name', str(t)) for t in ordered]}")
     return ordered
-
-

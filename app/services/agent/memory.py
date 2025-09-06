@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.services.db.messages import fetch_recent_messages, fetch_relevant_messages
+from app.db.messages import fetch_recent_messages, fetch_relevant_messages
 from app.services.llms.azure_openai import embedder
 from app.utils.stream_utils import emit_process
 

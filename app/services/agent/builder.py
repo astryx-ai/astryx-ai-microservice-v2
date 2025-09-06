@@ -3,11 +3,12 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import AIMessage, SystemMessage
 
 from app.services.llms.azure_openai import chat_model
-from app.services.agent_tools.registry import load_tools
-from app.services.agent_tools.helper_tools import decide_route
+from app.agent_tools.registry import load_tools
+from app.agent_tools.helper_tools import decide_route
 from app.utils.stream_utils import emit_process
-from app.services.agent_tools.deep_research import run_deep_research
-from app.services.agent_tools.chart_viz import run_chart_viz
+from app.subgraphs.deep_research import run_deep_research
+from app.subgraphs.chart_viz import run_chart_viz
+from app.services.agent.state import AVAILABLE_ROUTES
 
 
 def _route_decision(state):
@@ -38,9 +39,8 @@ def _route_decision(state):
         print(f"[Router] Using cached route: {cached_route}")
         return cached_route
 
-    # 🔑 Call the centralized router
     try:
-        available_routes = ["standard", "deep_research", "chart_viz"]
+        available_routes = AVAILABLE_ROUTES
         chosen_route, reason = decide_route(
             user_query,
             has_context,

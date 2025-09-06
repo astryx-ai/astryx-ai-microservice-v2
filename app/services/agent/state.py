@@ -10,3 +10,10 @@ class AgentState(TypedDict, total=False):
     # Optional convenience fields for routers
     query: Optional[str]
     context: Optional[List[Any]]
+
+# Single source of truth for all available routes/subgraphs
+AVAILABLE_ROUTES: List[str] = [
+    "standard",
+    "deep_research",
+    "chart_viz",
+]
