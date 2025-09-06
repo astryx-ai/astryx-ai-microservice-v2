@@ -4,14 +4,40 @@ import re
 
 
 def _detect_duplicate_sections(content: str) -> bool:
-    lines = content.split('\n')
-    headings = [line.strip() for line in lines if line.strip() and (line.startswith('#') or line.isupper() or 'Executive Summary' in line or 'Company/Market Overview' in line)]
-    seen_headings = set()
-    for heading in headings:
-        normalized = heading.lower().strip('#').strip()
-        if normalized in seen_headings and len(normalized) > 10:
+    """Dynamic duplicate detection for any content type."""
+    content_lower = content.lower()
+    
+    # 1. Auto-detect markdown headings and check for duplicates
+    heading_pattern = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
+    headings = heading_pattern.findall(content_lower)
+    
+    # Count heading duplicates
+    heading_texts = [heading[1].strip() for heading in headings]
+    heading_counts = {}
+    for heading in heading_texts:
+        heading_counts[heading] = heading_counts.get(heading, 0) + 1
+    
+    for heading, count in heading_counts.items():
+        if count > 1:
+            print(f"[Formatter] DUPLICATE HEADING: '{heading}' appears {count} times")
             return True
-        seen_headings.add(normalized)
+    
+    # 2. Check for content similarity (paragraphs repeated)
+    paragraphs = [p.strip() for p in content.split('\n\n') if len(p.strip()) > 50]
+    
+    for i, para1 in enumerate(paragraphs):
+        for j, para2 in enumerate(paragraphs[i+1:], i+1):
+            words1 = set(para1.lower().split())
+            words2 = set(para2.lower().split())
+            
+            if len(words1) > 5 and len(words2) > 5:
+                intersection = len(words1.intersection(words2))
+                overlap_sim = intersection / max(len(words1), len(words2))
+                
+                if overlap_sim > 0.7:  # 70% word overlap = duplicate
+                    print(f"[Formatter] CONTENT SIMILARITY: {overlap_sim:.1%} overlap")
+                    return True
+    
     return False
 
 
@@ -48,8 +74,9 @@ def format_financial_content(content: str) -> str:
             )
         else:
             system_msg = (
-                "You are a financial content formatter. Your job is to take raw financial research content and format it professionally. "
-                "Structure the content with clear headings, tables for numerical data, and proper citations. "
+                "You are a financial content formatter and data visualization expert. Your job is to take raw financial research content and format it professionally. "
+                "Structure the content with clear headings, intelligent table layouts for numerical data, and proper citations. "
+                "CRITICAL: For financial metrics, analyze data structure and choose optimal table format: (1) Single comprehensive table for simple data, (2) Multiple categorized tables for complex grouped data, (3) Compact side-by-side tables for comparisons. "
                 "Ensure professional presentation suitable for a financial platform. "
                 "Begin with a 1–2 sentence 'Chart insight' lead if present, then ensure correct markdown spacing (blank line before/after '##' headings). "
                 "Do not include raw JSON or fenced code blocks in the final output."
@@ -58,8 +85,9 @@ def format_financial_content(content: str) -> str:
                 f"Format this financial research content for professional presentation:\n\n{content}\n\n"
                 f"Requirements:\n"
                 f"- Clear headings and structure\n"
-                f"- Use tables for numerical comparisons\n"
-                f"- Bold important metrics\n"
+                f"- Smart table design: analyze data relationships and choose best format (single comprehensive vs categorized sections vs compact layouts)\n"
+                f"- Use tables for ALL numerical comparisons and metrics\n"
+                f"- Bold important metrics and add helpful calculations (% changes, ratios) where relevant\n"
                 f"- Maintain all citations\n"
                 f"- Professional financial platform formatting\n"
                 f"- Start with a succinct 'Chart insight' lead if present\n"

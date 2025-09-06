@@ -106,7 +106,12 @@ def _standard_agent_node(state):
     llm = chat_model(temperature=0.2)
     # Check if query might need basic financial tools
     query_lower = user_question.lower()
-    financial_keywords = ["shareholding", "governance", "bse", "nse", "company", "stock"]
+    financial_keywords = [
+        "shareholding", "governance", "bse", "nse", "company", "stock",
+        "fundamentals", "market data", "pe ratio", "pb ratio", "p/e", "p/b", 
+        "financial", "ratios", "earnings", "bank", "ltd", "limited",
+        "market cap", "dividend", "eps", "roe", "current price", "share price"
+    ]
     use_financial = any(keyword in query_lower for keyword in financial_keywords)
     
     if use_financial:
@@ -114,11 +119,21 @@ def _standard_agent_node(state):
         # Add financial tools instruction to system message
         enhanced_system = (
             "You are a financial AI assistant with access to specialized financial data extraction tools. "
-            "CRITICAL: For any query about shareholding patterns, promoter holdings, institutional holdings, or ownership:\n"
-            "→ You MUST use the extract_shareholding_pattern tool\n\n"
-            "Do NOT provide general information without using these tools first. "
-            "The shareholding tool extracts real data from BSE XBRL filings. "
-            "Use web search for general market information or non-Indian companies."
+            "CRITICAL: Use the right tool for the right data type:\n\n"
+            "🏦 BSE FUNDAMENTALS TOOL (extract_fundamentals_header):\n"
+            "→ Company classification, industry, sector, ISIN\n"
+            "→ Financial ratios: P/E, P/B, ROE, NPM, EPS\n"
+            "→ Basic details: face value, BSE group, index membership\n"
+            "→ Use for: 'fundamentals', 'ratios', 'company info', 'classification'\n\n"
+            "🌐 EXA SEARCH TOOLS (exa_live_search):\n"
+            "→ Current market prices, daily changes, volume, market cap\n"
+            "→ Live trading data, 52-week high/low, real-time quotes\n"
+            "→ News, market sentiment, analyst reports\n"
+            "→ Use for: 'current price', 'market data', 'live quotes', 'trading volume'\n\n"
+            "📊 SHAREHOLDING TOOL (extract_shareholding_pattern):\n"
+            "→ Promoter holdings, institutional holdings, foreign investments\n"
+            "→ Use for: 'shareholding', 'ownership', 'promoter holdings'\n\n"
+            "STRATEGY: For comprehensive market analysis, use BOTH BSE fundamentals + Exa search to get complete picture."
         )
         updated_messages = [
             SystemMessage(content=enhanced_system) if getattr(msg, "type", None) == "system" else msg

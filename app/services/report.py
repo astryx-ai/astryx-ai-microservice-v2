@@ -147,7 +147,57 @@ class IngestorService:
             logger.exception(f"Error extracting shareholding pattern for {instrument_key}: {str(e)}")
             return self._get_error_response(instrument_key or "", f"Extraction failed: {str(e)}")
 
-
+    def extract_fundamentals_header(
+         self,
+         instrument_key: Optional[str] = None,
+         scripcode: Optional[str] = None,
+         stock_query: Optional[str] = None,
+         quote_type: str = "EQ",) -> Dict[str, Any]:
+         """
+         Fetch fundamental/company header data from BSE ComHeadernew API.
+         Does not store files; returns the JSON payload as-is with minimal metadata.
+         API: https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w?quotetype={quote_type}&scripcode={scripcode}
+         """
+         try:
+             # Resolve scripcode from query if needed
+             if not scripcode and stock_query:
+                 scripcode = self._resolve_scripcode_from_query(stock_query)
+             if not scripcode:
+                 return self._get_error_response(instrument_key or "", "No scripcode provided")
+ 
+             # Build default instrument_key if missing
+             if not instrument_key:
+                 instrument_key = f"BSE_{quote_type}|SCRIPCODE_{scripcode}"
+ 
+             url = (
+                 f"https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w?quotetype={quote_type}&scripcode={scripcode}"
+             )
+             headers = {
+                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+                 'Accept': 'application/json, text/javascript, /; q=0.01',
+                 'Referer': 'https://www.bseindia.com/'
+             }
+ 
+             response = requests.get(url, headers=headers, timeout=30)
+             response.raise_for_status()
+             data = response.json()
+ 
+             return {
+                 "instrument_key": instrument_key,
+                 "scripcode": scripcode,
+                 "quote_type": quote_type,
+                 "data_source": "bse_api",
+                 "api_url": url,
+                 "raw_response": data,
+                 "extracted_at": datetime.now().isoformat(),
+                 "status": "success",
+             }
+         except requests.exceptions.RequestException as e:
+             logger.error(f"ComHeadernew fetch failed for {instrument_key}: {str(e)}")
+             return self._get_error_response(instrument_key or "", f"ComHeadernew fetch failed: {str(e)}")
+         except Exception as e:
+             logger.exception(f"Error fetching fundamentals header for {instrument_key}: {str(e)}")
+             return self._get_error_response(instrument_key or "", f"Fundamentals header fetch failed: {str(e)}")
 
     def extract_corporate_governance_range(self,
         instrument_key: Optional[str] = None,

@@ -3,14 +3,11 @@ XBRL Analysis Tools for processing financial data from XBRL files.
 """
 import os
 import re
-import json
-import tempfile
-import shutil
-from typing import Dict, Any, List, Optional, Tuple
+import logging
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from xml.etree import ElementTree as ET
 from pydantic import BaseModel, Field
-import logging
 
 logger = logging.getLogger("xbrl_analyzer")
 
@@ -31,8 +28,8 @@ class XBRLAnalyzer:
     """Analyzer for XBRL financial data files"""
     
     def __init__(self):
-        self.temp_cleanup_age = timedelta(minutes=30)  # Cleanup temp files after 30 minutes
-        self.entity_mapping = {}  # Store context ID to entity name mappings
+        self.temp_cleanup_age = timedelta(minutes=30)
+        self.entity_mapping = {}
     
     def analyze_xbrl_files(self, file_paths: List[str], analysis_type: str = "shareholding") -> XBRLAnalysisResult:
         """
@@ -70,6 +67,7 @@ class XBRLAnalyzer:
                         result.errors.append(f"File not found: {file_path}")
                 except Exception as e:
                     result.errors.append(f"Error processing {file_path}: {str(e)}")
+                    logger.error(f"Error processing file {file_path}: {e}")
             
             if not all_data:
                 result.errors.append("No valid data extracted from XBRL files")
@@ -98,12 +96,13 @@ class XBRLAnalyzer:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # Try to parse as XML
+            # Try to parse as XML first
             try:
                 root = ET.fromstring(content)
                 return self._extract_xml_data(root, analysis_type)
             except ET.ParseError:
                 # If XML parsing fails, try text-based extraction
+                logger.warning(f"XML parsing failed for {file_path}, trying text-based extraction")
                 return self._extract_text_data(content, analysis_type)
                 
         except Exception as e:
@@ -117,7 +116,7 @@ class XBRLAnalyzer:
             "financial_items": {},
             "metadata": {},
             "raw_elements": [],
-            "entity_mapping": {}  # Store context to entity mappings
+            "entity_mapping": {}
         }
         
         # Extract entity mappings first
@@ -129,45 +128,52 @@ class XBRLAnalyzer:
         data["metadata"]["period"] = self._find_element_text(root, ["Period", "ReportingPeriod", "Quarter"])
         
         if analysis_type == "shareholding":
-            # Extract shareholding-specific data
-            shareholding_patterns = []
-            
-            # Look for common shareholding elements
-            for elem in root.iter():
-                tag_lower = elem.tag.lower() if elem.tag else ""
-                text = elem.text or ""
-                
-                if any(keyword in tag_lower for keyword in ['sharehold', 'equity', 'promot', 'foreign', 'institutional']):
-                    if text.strip() and not text.strip().isspace():
-                        # Resolve context references
-                        resolved_value = self._resolve_context_reference(text, data["entity_mapping"])
-                        shareholding_patterns.append({
-                            "category": elem.tag,
-                            "value": resolved_value,
-                            "original_value": text.strip(),
-                            "attributes": elem.attrib
-                        })
-            
-            data["shareholding_patterns"] = shareholding_patterns
-            
+            data = self._extract_shareholding_xml_data(root, data)
         elif analysis_type == "governance":
-            # Extract governance-specific data
-            governance_items = []
-            
-            for elem in root.iter():
-                tag_lower = elem.tag.lower() if elem.tag else ""
-                text = elem.text or ""
-                
-                if any(keyword in tag_lower for keyword in ['director', 'board', 'committee', 'audit', 'compliance', 'governance']):
-                    if text.strip() and not text.strip().isspace():
-                        governance_items.append({
-                            "category": elem.tag,
-                            "value": text.strip(),
-                            "attributes": elem.attrib
-                        })
-            
-            data["governance_items"] = governance_items
+            data = self._extract_governance_xml_data(root, data)
         
+        return data
+    
+    def _extract_shareholding_xml_data(self, root: ET.Element, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract shareholding-specific data from XML"""
+        shareholding_patterns = []
+        
+        # Look for common shareholding elements
+        for elem in root.iter():
+            tag_lower = elem.tag.lower() if elem.tag else ""
+            text = elem.text or ""
+            
+            if any(keyword in tag_lower for keyword in ['sharehold', 'equity', 'promot', 'foreign', 'institutional']):
+                if text.strip() and not text.strip().isspace():
+                    # Resolve context references
+                    resolved_value = self._resolve_context_reference(text, data["entity_mapping"])
+                    shareholding_patterns.append({
+                        "category": elem.tag,
+                        "value": resolved_value,
+                        "original_value": text.strip(),
+                        "attributes": elem.attrib
+                    })
+        
+        data["shareholding_patterns"] = shareholding_patterns
+        return data
+    
+    def _extract_governance_xml_data(self, root: ET.Element, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract governance-specific data from XML"""
+        governance_items = []
+        
+        for elem in root.iter():
+            tag_lower = elem.tag.lower() if elem.tag else ""
+            text = elem.text or ""
+            
+            if any(keyword in tag_lower for keyword in ['board', 'director', 'committee', 'audit', 'governance']):
+                if text.strip() and not text.strip().isspace():
+                    governance_items.append({
+                        "category": elem.tag,
+                        "value": text.strip(),
+                        "attributes": elem.attrib
+                    })
+        
+        data["governance_items"] = governance_items
         return data
     
     def _extract_text_data(self, content: str, analysis_type: str) -> Dict[str, Any]:
@@ -180,34 +186,27 @@ class XBRLAnalyzer:
         }
         
         if analysis_type == "shareholding":
-            # Look for shareholding patterns
             patterns = {
                 "promoter_percentage": r"promoter[s]?\s*[:=]\s*([0-9.]+)%?",
                 "public_percentage": r"public\s*[:=]\s*([0-9.]+)%?",
                 "foreign_percentage": r"foreign\s*[:=]\s*([0-9.]+)%?",
                 "institutional_percentage": r"institutional\s*[:=]\s*([0-9.]+)%?"
             }
-            
-            for key, pattern in patterns.items():
-                matches = re.findall(pattern, content, re.IGNORECASE)
-                if matches:
-                    data["extracted_values"][key] = matches[0]
-                    data["patterns_found"].append(key)
-        
         elif analysis_type == "governance":
-            # Look for governance patterns
             patterns = {
                 "board_size": r"board\s+size\s*[:=]\s*([0-9]+)",
                 "independent_directors": r"independent\s+director[s]?\s*[:=]\s*([0-9]+)",
                 "audit_committee": r"audit\s+committee\s+member[s]?\s*[:=]\s*([0-9]+)",
                 "women_directors": r"women\s+director[s]?\s*[:=]\s*([0-9]+)"
             }
-            
-            for key, pattern in patterns.items():
-                matches = re.findall(pattern, content, re.IGNORECASE)
-                if matches:
-                    data["extracted_values"][key] = matches[0]
-                    data["patterns_found"].append(key)
+        else:
+            patterns = {}
+        
+        for key, pattern in patterns.items():
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            if matches:
+                data["extracted_values"][key] = matches[0]
+                data["patterns_found"].append(key)
         
         return data
     
@@ -236,37 +235,19 @@ class XBRLAnalyzer:
         for data in all_data:
             if "shareholding_patterns" in data:
                 for pattern in data["shareholding_patterns"]:
-                    category = pattern["category"].lower()
-                    value = pattern["value"]  # This should already be resolved
-                    original_value = pattern.get("original_value", value)
+                    category = pattern.get("category", "Unknown")
+                    value = pattern.get("value", "")
                     
-                    # Try to extract numerical values
-                    numbers = re.findall(r'([0-9.]+)', str(value))
-                    if numbers:
-                        shareholding_summary[category] = {
-                            "value": numbers[0],
-                            "text": value,
-                            "original": original_value,
-                            "period": data.get("metadata", {}).get("period", "Unknown")
-                        }
+                    # Categorize patterns
+                    if any(term in category.lower() for term in ['foreign', 'fpi', 'overseas']):
+                        foreign_shareholders.append(pattern)
+                    elif any(term in category.lower() for term in ['sharehold', 'equity', 'stake']):
+                        top_shareholders.append(pattern)
                     
-                    # Extract foreign shareholder details
-                    if any(foreign_term in category for foreign_term in ['foreign', 'fpi', 'overseas', 'international']):
-                        foreign_shareholders.append({
-                            "category": pattern["category"],
-                            "value": value,
-                            "original": original_value,
-                            "period": data.get("metadata", {}).get("period", "Unknown")
-                        })
-                    
-                    # Extract potential shareholder names and details
-                    if any(term in category for term in ['shareholder', 'investor', 'institution', 'fund']):
-                        top_shareholders.append({
-                            "name": pattern["category"],
-                            "value": value,
-                            "original": original_value,
-                            "period": data.get("metadata", {}).get("period", "Unknown")
-                        })
+                    # Store in summary
+                    if category not in shareholding_summary:
+                        shareholding_summary[category] = []
+                    shareholding_summary[category].append(value)
             
             if "extracted_values" in data:
                 shareholding_summary.update(data["extracted_values"])
@@ -280,35 +261,20 @@ class XBRLAnalyzer:
         result.shareholding_data["major_shareholders"] = top_shareholders
         result.shareholding_data["analysis_insights"] = analysis_insights
         
-        # Enhanced insights from analysis layer
+        # Generate insights
         key_insights = analysis_insights.get("key_insights", [])
-        
-        if shareholding_summary:
-            if not key_insights:  # Fallback if no analytical insights
-                key_insights.append("✅ Shareholding pattern data successfully extracted from XBRL filings")
+        if not key_insights and shareholding_summary:
+            key_insights = [
+                f"Extracted shareholding data from {len(all_data)} XBRL files",
+                f"Identified {len(shareholding_summary)} distinct shareholding categories",
+                f"Found {len(foreign_shareholders)} foreign investment entries",
+                f"Identified {len(top_shareholders)} major stakeholder entries"
+            ]
         
         result.insights = key_insights
-        result.summary = (
-            f"📊 Analyzed {len(all_data)} XBRL files for shareholding patterns. "
-            f"Generated {len(key_insights)} narrative insights with trend analysis."
-        )
+        result.summary = f"Analyzed {len(all_data)} XBRL files for shareholding patterns. Generated {len(key_insights)} key insights."
         
         return result
-    
-    def _categorize_shareholding_metric(self, metric_name: str) -> str:
-        """Categorize shareholding metrics for better organization"""
-        metric_lower = metric_name.lower()
-        
-        if any(term in metric_lower for term in ['promot', 'director', 'management']):
-            return "Promoter Holdings"
-        elif any(term in metric_lower for term in ['foreign', 'fpi', 'overseas', 'international']):
-            return "Foreign Holdings"
-        elif any(term in metric_lower for term in ['institution', 'mutual', 'insurance', 'bank']):
-            return "Institutional Holdings"
-        elif any(term in metric_lower for term in ['public', 'retail', 'individual']):
-            return "Public Holdings"
-        else:
-            return "Other Holdings"
     
     def _analyze_governance_data(self, all_data: List[Dict[str, Any]], result: XBRLAnalysisResult) -> XBRLAnalysisResult:
         """Analyze corporate governance data and generate insights"""
@@ -319,17 +285,12 @@ class XBRLAnalyzer:
         for data in all_data:
             if "governance_items" in data:
                 for item in data["governance_items"]:
-                    category = item["category"].lower()
-                    value = item["value"]
+                    category = item.get("category", "Unknown")
+                    value = item.get("value", "")
                     
-                    # Try to extract numerical values
-                    numbers = re.findall(r'([0-9.]+)', value)
-                    if numbers:
-                        governance_summary[category] = {
-                            "value": numbers[0],
-                            "text": value,
-                            "period": data.get("metadata", {}).get("period", "Unknown")
-                        }
+                    if category not in governance_summary:
+                        governance_summary[category] = []
+                    governance_summary[category].append(value)
             
             if "extracted_values" in data:
                 governance_summary.update(data["extracted_values"])
@@ -343,24 +304,24 @@ class XBRLAnalyzer:
             # Look for board composition
             board_keys = [k for k in governance_summary.keys() if any(term in k.lower() for term in ['board', 'director'])]
             if board_keys:
-                key_insights.append(f"Board composition information found: {len(board_keys)} entries")
+                key_insights.append(f"Board composition information found across {len(board_keys)} categories")
             
             # Look for committee information
             committee_keys = [k for k in governance_summary.keys() if 'committee' in k.lower()]
             if committee_keys:
-                key_insights.append(f"Committee information found: {len(committee_keys)} entries")
+                key_insights.append(f"Committee structure data available for {len(committee_keys)} committees")
             
             # Generate key metrics
-            result.key_metrics = [
-                {"metric": k, "value": v.get("value", v) if isinstance(v, dict) else v}
-                for k, v in governance_summary.items()
-                if isinstance(v, (str, int, float, dict))
-            ]
+            for key, values in governance_summary.items():
+                if isinstance(values, list) and values:
+                    result.key_metrics.append({
+                        "metric": key,
+                        "value": values[0] if len(values) == 1 else values,
+                        "category": "governance"
+                    })
         
         result.insights = key_insights
-        result.summary = f"Analyzed {len(all_data)} XBRL files for corporate governance. " + \
-                        f"Extracted {len(governance_summary)} data points. " + \
-                        f"Key insights: {len(key_insights)} findings."
+        result.summary = f"Analyzed {len(all_data)} XBRL files for corporate governance. Extracted {len(governance_summary)} data points."
         
         return result
     
@@ -377,23 +338,11 @@ class XBRLAnalyzer:
                 for file in files:
                     file_path = os.path.join(root, file)
                     try:
-                        file_time = datetime.fromtimestamp(os.path.getctime(file_path))
-                        if file_time < cutoff_time:
+                        if datetime.fromtimestamp(os.path.getmtime(file_path)) < cutoff_time:
                             os.remove(file_path)
                             cleaned_count += 1
                     except Exception as e:
                         logger.warning(f"Failed to clean up {file_path}: {e}")
-            
-            # Remove empty directories
-            for root, dirs, files in os.walk(base_dir, topdown=False):
-                for dir in dirs:
-                    dir_path = os.path.join(root, dir)
-                    try:
-                        if not os.listdir(dir_path):
-                            os.rmdir(dir_path)
-                    except Exception:
-                        pass
-                        
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
         
@@ -405,30 +354,12 @@ class XBRLAnalyzer:
         
         # Look for context definitions
         for elem in root.iter():
-            tag_lower = elem.tag.lower() if elem.tag else ""
-            
-            # Common patterns for entity mappings in XBRL
-            if 'context' in tag_lower or 'entity' in tag_lower:
+            if elem.tag and ('context' in elem.tag.lower() or 'entity' in elem.tag.lower()):
                 context_id = elem.get('id', '')
                 entity_name = elem.text or ''
                 
-                # Also check attributes for entity info
-                for attr_name, attr_value in elem.attrib.items():
-                    if 'name' in attr_name.lower() or 'entity' in attr_name.lower():
-                        entity_name = attr_value
-                        break
-                
                 if context_id and entity_name:
                     mappings[context_id] = entity_name
-            
-            # Look for explicit shareholder names
-            if any(term in tag_lower for term in ['shareholder', 'investor', 'institution', 'name']):
-                text = elem.text or ''
-                if text and not any(skip in text.lower() for skip in ['context', 'total', 'number']):
-                    # Try to find associated context ID
-                    context_ref = elem.get('contextRef', '') or elem.get('context', '')
-                    if context_ref:
-                        mappings[context_ref] = text
         
         return mappings
     
@@ -437,24 +368,19 @@ class XBRLAnalyzer:
         if not value or not isinstance(value, str):
             return value
         
-        # Check if value looks like a context reference (e.g., Context15, c_123, etc.)
+        # Check if value looks like a context reference
         context_pattern = re.match(r'^(context|c_?)(\d+)$', value.lower().strip())
         if context_pattern:
-            # Look for mapping
-            if value in entity_mapping:
-                return entity_mapping[value]
-            else:
-                return f"Unidentified shareholder ({value})"
+            context_key = context_pattern.group(0)
+            return entity_mapping.get(context_key, value)
         
         # Check if value contains context references mixed with other text
         context_refs = re.findall(r'\b(context\d+|c_\d+)\b', value.lower())
         if context_refs:
             resolved_value = value
             for ref in context_refs:
-                if ref in entity_mapping:
-                    resolved_value = resolved_value.replace(ref, entity_mapping[ref])
-                else:
-                    resolved_value = resolved_value.replace(ref, f"Unidentified shareholder ({ref})")
+                entity_name = entity_mapping.get(ref, ref)
+                resolved_value = resolved_value.replace(ref, entity_name)
             return resolved_value
         
         return value
@@ -475,35 +401,35 @@ class XBRLAnalyzer:
         
         for data in all_data:
             period = data.get("metadata", {}).get("period", "Unknown")
+            
             if period not in periods_data:
                 periods_data[period] = {
-                    "promoter": 0, "fpi": 0, "institutional": 0, 
-                    "retail": 0, "foreign": 0, "total_shareholders": 0
+                    "promoter": 0,
+                    "foreign": 0,
+                    "institutional": 0,
+                    "retail": 0,
+                    "total_shareholders": 0
                 }
             
-            # Extract and categorize shareholding data
+            # Extract percentage data from shareholding patterns
             if "shareholding_patterns" in data:
                 for pattern in data["shareholding_patterns"]:
-                    category = pattern["category"].lower()
-                    value = pattern["value"]
+                    category = pattern.get("category", "").lower()
+                    value_str = pattern.get("value", "")
                     
-                    # Extract numeric values
-                    numbers = re.findall(r'([0-9.]+)', str(value))
-                    numeric_value = float(numbers[0]) if numbers else 0
-                    
-                    # Categorize holdings
-                    if 'promot' in category:
-                        periods_data[period]["promoter"] += numeric_value
-                    elif any(term in category for term in ['foreign', 'fpi']):
-                        periods_data[period]["foreign"] += numeric_value
-                        if 'fpi' in category:
-                            periods_data[period]["fpi"] += numeric_value
-                    elif any(term in category for term in ['institution', 'mutual', 'insurance']):
-                        periods_data[period]["institutional"] += numeric_value
-                    elif 'retail' in category or 'public' in category:
-                        periods_data[period]["retail"] += numeric_value
-                    elif 'shareholder' in category and 'number' in category:
-                        periods_data[period]["total_shareholders"] = numeric_value
+                    # Try to extract numerical values
+                    percentage_match = re.search(r'(\d+\.?\d*)%?', str(value_str))
+                    if percentage_match:
+                        percentage = float(percentage_match.group(1))
+                        
+                        if any(term in category for term in ['promot', 'management']):
+                            periods_data[period]["promoter"] = max(periods_data[period]["promoter"], percentage)
+                        elif any(term in category for term in ['foreign', 'fpi']):
+                            periods_data[period]["foreign"] = max(periods_data[period]["foreign"], percentage)
+                        elif any(term in category for term in ['institution', 'mutual']):
+                            periods_data[period]["institutional"] = max(periods_data[period]["institutional"], percentage)
+                        elif any(term in category for term in ['public', 'retail']):
+                            periods_data[period]["retail"] = max(periods_data[period]["retail"], percentage)
         
         # Compute year-over-year trends
         sorted_periods = sorted(periods_data.keys())
@@ -512,17 +438,12 @@ class XBRLAnalyzer:
             previous = periods_data[sorted_periods[-2]]
             
             for category in ["promoter", "foreign", "institutional", "retail"]:
-                current_val = current.get(category, 0)
-                previous_val = previous.get(category, 0)
-                change = current_val - previous_val
-                
-                if previous_val > 0:
-                    change_pct = (change / previous_val) * 100
+                if previous[category] > 0:
+                    change = ((current[category] - previous[category]) / previous[category]) * 100
                     analysis["year_over_year_trends"][category] = {
-                        "change": change,
-                        "change_percentage": change_pct,
-                        "current": current_val,
-                        "previous": previous_val
+                        "current": current[category],
+                        "previous": previous[category],
+                        "change_percentage": change
                     }
         
         # Generate insights
@@ -536,43 +457,35 @@ class XBRLAnalyzer:
         insights = []
         
         if not periods_data:
-            return ["No sufficient data available for trend analysis"]
+            insights.append("Shareholding pattern data extracted from XBRL filings")
+            return insights
         
         # Get latest period data
         latest_period = max(periods_data.keys()) if periods_data else None
         if not latest_period:
+            insights.append("Basic shareholding information available from regulatory filings")
             return insights
         
         latest = periods_data[latest_period]
         
-        # Foreign investment insights
-        if trends.get("foreign", {}).get("change_percentage"):
-            change_pct = trends["foreign"]["change_percentage"]
-            if change_pct > 0:
-                insights.append(f"🔥 Foreign participation increased by {change_pct:.1f}% YoY, signaling growing international confidence")
-            else:
-                insights.append(f"⚠️ Foreign participation declined by {abs(change_pct):.1f}% YoY, worth monitoring for market sentiment")
+        # Trend-based insights
+        for category, trend_info in trends.items():
+            change_pct = trend_info.get("change_percentage", 0)
+            current = trend_info.get("current", 0)
+            
+            if abs(change_pct) > 1:  # Only report significant changes
+                if change_pct > 0:
+                    insights.append(f"{category.title()} holdings increased by {change_pct:.1f}% to {current:.1f}%")
+                else:
+                    insights.append(f"{category.title()} holdings decreased by {abs(change_pct):.1f}% to {current:.1f}%")
         
-        # Promoter insights
-        if trends.get("promoter", {}).get("change_percentage"):
-            change_pct = trends["promoter"]["change_percentage"]
-            if change_pct < -2:
-                insights.append(f"📉 Promoter holdings decreased by {abs(change_pct):.1f}%, indicating potential dilution or strategic changes")
-            elif change_pct > 2:
-                insights.append(f"📈 Promoter holdings increased by {change_pct:.1f}%, showing strong management confidence")
+        # Composition insights
+        total_holdings = sum([latest.get(k, 0) for k in ['promoter', 'foreign', 'institutional', 'retail']])
+        if total_holdings > 50:  # Meaningful data threshold
+            insights.append(f"Comprehensive shareholding structure identified with {total_holdings:.1f}% coverage")
         
-        # Institutional insights
-        if trends.get("institutional", {}).get("change_percentage"):
-            change_pct = trends["institutional"]["change_percentage"]
-            if change_pct > 5:
-                insights.append(f"🏦 Institutional participation surged by {change_pct:.1f}%, reflecting strong institutional interest")
-        
-        # Shareholder concentration insights
-        total_shareholders = latest.get("total_shareholders", 0)
-        if total_shareholders > 0:
-            if total_shareholders > 100000:
-                insights.append(f"🌐 Broad retail participation with {int(total_shareholders):,} shareholders indicates strong public interest")
-            elif total_shareholders < 1000:
-                insights.append(f"⚠️ Limited shareholder base ({int(total_shareholders):,}) suggests concentrated ownership")
+        # Default insight if no specific patterns found
+        if not insights:
+            insights.append("Shareholding pattern analysis completed from BSE XBRL regulatory filings")
         
         return insights

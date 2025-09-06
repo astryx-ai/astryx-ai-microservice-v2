@@ -13,12 +13,16 @@ from app.agent_tools.chart_emit import ChartPayloadInput as _ChartPayloadInput
 from app.agent_tools.financial_extraction import (
     shareholding_pattern_tool,
     ShareholdingPatternInput,
+    fundamentals_header_tool,
+    FundamentalsHeaderInput,
 )
 
 # Note: subgraphs are not tools
 
 
 # ---------- Pydantic schemas for structured tools ----------
+# (Financial tool schemas imported from financial_extraction module)
+
 class ExaSearchInput(BaseModel):
     query: str = Field(..., description="Search query")
     max_results: int = Field(5, ge=1, le=20, description="Maximum number of results")
@@ -93,6 +97,7 @@ STRUCTURED_TOOLS = {
         args_schema=_ChartPayloadInput,
     ),
     "extract_shareholding_pattern": shareholding_pattern_tool,
+    "extract_fundamentals_header": fundamentals_header_tool,
 }
 
 
@@ -100,7 +105,7 @@ STRUCTURED_TOOLS = {
 TOOL_CATEGORIES: Dict[str, List[str]] = {
     "web_search": ["exa_search", "exa_live_search", "fetch_url_text"],
     "chart": ["emit_chart"],
-    "financial_analysis": ["extract_shareholding_pattern"],
+    "financial_analysis": ["extract_shareholding_pattern", "extract_fundamentals_header"],
 }
 
 
