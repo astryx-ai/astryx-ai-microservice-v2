@@ -10,6 +10,10 @@ from app.agent_tools.exa import (
 )
 from app.agent_tools.chart_emit import emit_chart as _emit_chart
 from app.agent_tools.chart_emit import ChartPayloadInput as _ChartPayloadInput
+from app.agent_tools.financial_extraction import (
+    shareholding_pattern_tool,
+    ShareholdingPatternInput,
+)
 
 # Note: subgraphs are not tools
 
@@ -88,6 +92,7 @@ STRUCTURED_TOOLS = {
         description="Emit a chart_data event from a generic payload after schema validation. Returns empty string.",
         args_schema=_ChartPayloadInput,
     ),
+    "extract_shareholding_pattern": shareholding_pattern_tool,
 }
 
 
@@ -95,6 +100,7 @@ STRUCTURED_TOOLS = {
 TOOL_CATEGORIES: Dict[str, List[str]] = {
     "web_search": ["exa_search", "exa_live_search", "fetch_url_text"],
     "chart": ["emit_chart"],
+    "financial_analysis": ["extract_shareholding_pattern"],
 }
 
 

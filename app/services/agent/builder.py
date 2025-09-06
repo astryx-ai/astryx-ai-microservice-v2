@@ -8,6 +8,7 @@ from app.agent_tools.helper_tools import decide_route
 from app.utils.stream_utils import emit_process
 from app.subgraphs.deep_research import run_deep_research
 from app.subgraphs.chart_viz import run_chart_viz
+from app.subgraphs.financial_analysis import run_financial_analysis
 from app.services.agent.state import AVAILABLE_ROUTES
 
 
@@ -103,7 +104,30 @@ def _standard_agent_node(state):
         state = {"messages": updated_messages}
 
     llm = chat_model(temperature=0.2)
-    tools = load_tools(use_cases=["web_search"], structured=True)
+    # Check if query might need basic financial tools
+    query_lower = user_question.lower()
+    financial_keywords = ["shareholding", "governance", "bse", "nse", "company", "stock"]
+    use_financial = any(keyword in query_lower for keyword in financial_keywords)
+    
+    if use_financial:
+        tools = load_tools(use_cases=["web_search", "financial_analysis"], structured=True)
+        # Add financial tools instruction to system message
+        enhanced_system = (
+            "You are a financial AI assistant with access to specialized financial data extraction tools. "
+            "CRITICAL: For any query about shareholding patterns, promoter holdings, institutional holdings, or ownership:\n"
+            "→ You MUST use the extract_shareholding_pattern tool\n\n"
+            "Do NOT provide general information without using these tools first. "
+            "The shareholding tool extracts real data from BSE XBRL filings. "
+            "Use web search for general market information or non-Indian companies."
+        )
+        updated_messages = [
+            SystemMessage(content=enhanced_system) if getattr(msg, "type", None) == "system" else msg
+            for msg in messages
+        ]
+        state = {"messages": updated_messages}
+    else:
+        tools = load_tools(use_cases=["web_search"], structured=True)
+    
     agent = create_react_agent(llm, tools)
     return agent.invoke(state)
 
@@ -168,6 +192,36 @@ def _chart_viz_node(state):
         return {"messages": messages + [AIMessage(content=f"Chart visualization error: {str(e)}")]}
 
 
+def _financial_analysis_node(state):
+    """Financial analysis node for XBRL extraction and corporate data analysis."""
+    print("[FinancialAnalysis] Processing with financial analysis subgraph")
+    messages = state.get("messages", [])
+
+    # Extract user question
+    user_question = ""
+    for msg in reversed(messages):
+        if hasattr(msg, "type") and msg.type == "human":
+            content = msg.content
+            user_question = content[6:] if content.startswith("Task: ") else content
+            break
+
+    print(f"[FinancialAnalysis] Extracted user question: '{user_question}'")
+
+    try:
+        context_messages = [m for m in messages if hasattr(m, "type") and m.type in ["human", "ai"]]
+        financial_result = run_financial_analysis(user_question, context_messages=context_messages)
+
+        if not financial_result or not isinstance(financial_result, str):
+            financial_result = (
+                "I encountered an issue while analyzing financial data. Please try again with a specific company name."
+            )
+
+        return {"messages": messages + [AIMessage(content=financial_result)]}
+
+    except Exception as e:
+        return {"messages": messages + [AIMessage(content=f"Financial analysis error: {str(e)}")]}
+
+
 def build_routed_agent():
     """Build a LangGraph with routing between multiple subgraphs."""
     graph = StateGraph(dict)
@@ -176,7 +230,7 @@ def build_routed_agent():
     graph.add_node("standard", _standard_agent_node)
     graph.add_node("deep_research", _deep_research_node)
     graph.add_node("chart_viz", _chart_viz_node)
-    # Future: graph.add_node("legal_analysis", _legal_analysis_node)
+    graph.add_node("financial_analysis", _financial_analysis_node)
 
     # Router → nodes
     graph.add_conditional_edges(
@@ -186,6 +240,7 @@ def build_routed_agent():
             "standard": "standard",
             "deep_research": "deep_research",
             "chart_viz": "chart_viz",
+            "financial_analysis": "financial_analysis",
         },
     )
 
@@ -193,6 +248,7 @@ def build_routed_agent():
     graph.add_edge("standard", END)
     graph.add_edge("deep_research", END)
     graph.add_edge("chart_viz", END)
+    graph.add_edge("financial_analysis", END)
 
     return graph.compile()
 

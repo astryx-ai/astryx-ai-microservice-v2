@@ -16,4 +16,5 @@ AVAILABLE_ROUTES: List[str] = [
     "standard",
     "deep_research",
     "chart_viz",
+    "financial_analysis",
 ]

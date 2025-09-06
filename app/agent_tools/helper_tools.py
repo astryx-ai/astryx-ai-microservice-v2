@@ -134,6 +134,7 @@ def _llm_route_decision_multi(
             "Route Guidelines:\n"
             "- 'chart_viz': For requests asking to create charts, graphs, visualizations, or show data in visual format\n"
             "- 'deep_research': For comprehensive analysis requiring multi-step research and synthesis\n"
+            "- 'financial_analysis': For corporate financial analysis, shareholding patterns, governance data, XBRL analysis\n"
             "- 'standard': For quick searches, follow-ups, and general queries\n"
             "Pick the subgraph that best matches the task. "
             "Respond strictly as JSON with 'route' and 'reason'."
@@ -179,8 +180,16 @@ def decide_route(
         "pie chart", "line chart", "show data", "create chart", "display data",
         "visual", "dashboard", "infographic"
     ]
+    financial_keywords = [
+        "shareholding", "governance", "corporate governance", "board composition",
+        "promoter holding", "institutional holding", "foreign holding", "xbrl",
+        "director", "audit committee", "financial filing", "annual report",
+        "bse filing", "compliance", "ownership pattern"
+    ]
     if any(keyword in query_lower for keyword in chart_keywords):
         return "chart_viz", "explicit chart/visualization requested"
+    if any(keyword in query_lower for keyword in financial_keywords):
+        return "financial_analysis", "financial/corporate analysis requested"
     if "deep research" in query_lower or "comprehensive analysis" in query_lower:
         return "deep_research", "explicit deep research requested"
     if len(query.split()) > 15:
