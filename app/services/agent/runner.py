@@ -56,6 +56,19 @@ def agent_answer(question: str, user_id: str | None = None, chat_id: str | None 
     print(f"[Runner] Pre-computed route: {route}")
 
     print("[Runner] agent_answer executing routed graph")
+    # Capture sources via emitter during invoke
+    sources: dict[str, str] = {}
+    def _answer_emitter(obj):
+        try:
+            if isinstance(obj, dict) and obj.get("event") == "source":
+                url = str(obj.get("url") or "").strip()
+                title = str(obj.get("title") or url).strip()
+                if url:
+                    sources[url] = title
+        except Exception:
+            pass
+    set_process_emitter(_answer_emitter)
+
     result = graph.invoke(state)
     print(f"[Runner] Non-streaming response type: {type(result)}")
 
@@ -74,6 +87,13 @@ def agent_answer(question: str, user_id: str | None = None, chat_id: str | None 
 
     # Format the content; chart emission is handled by tools inside chart_viz
     formatted_content = format_financial_content(raw_content)
+
+    # Append citations if any sources captured
+    if sources:
+        citations_lines = ["", "## Citations"]
+        for url, title in sources.items():
+            citations_lines.append(f"- [{title}]({url})")
+        formatted_content = formatted_content.rstrip() + "\n" + "\n".join(citations_lines) + "\n"
 
     return formatted_content
 
@@ -134,6 +154,7 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
         sent_any = False
 
         _pending_meta: list[bytes] = []
+        _sources: dict[str, str] = {}
 
         def _emit_process_line(obj):
             nonlocal index
@@ -157,6 +178,14 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
                     def _emitter(obj):
                         payload = obj if isinstance(obj, dict) else {"event": "process", "message": str(obj)}
                         _pending_meta.append((json.dumps(payload) + "\n").encode("utf-8"))
+                        try:
+                            if isinstance(payload, dict) and payload.get("event") == "source":
+                                url = str(payload.get("url") or "").strip()
+                                title = str(payload.get("title") or url).strip()
+                                if url:
+                                    _sources[url] = title
+                        except Exception:
+                            pass
 
                     set_process_emitter(_emitter)
                     # Emit an initial meta with chat_id if present
@@ -180,6 +209,14 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
                     def _emitter(obj):
                         payload = obj if isinstance(obj, dict) else {"event": "process", "message": str(obj)}
                         _pending_meta.append((json.dumps(payload) + "\n").encode("utf-8"))
+                        try:
+                            if isinstance(payload, dict) and payload.get("event") == "source":
+                                url = str(payload.get("url") or "").strip()
+                                title = str(payload.get("title") or url).strip()
+                                if url:
+                                    _sources[url] = title
+                        except Exception:
+                            pass
 
                     set_process_emitter(_emitter)
                     if chat_id:
@@ -232,6 +269,14 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
                     else:
                         payload = {"process": str(obj)}
                     _pending_meta.append((json.dumps({"meta": payload}) + "\n").encode("utf-8"))
+                    try:
+                        if isinstance(obj, dict) and obj.get("event") == "source":
+                            url = str(obj.get("url") or "").strip()
+                            title = str(obj.get("title") or url).strip()
+                            if url:
+                                _sources[url] = title
+                    except Exception:
+                        pass
 
                 set_process_emitter(_invoke_emitter)
 
@@ -271,6 +316,16 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
                         if piece:
                             yield (json.dumps({"event": "token", "text": piece, "index": index}) + "\n").encode("utf-8")
                             index += 1
+
+                    # After main content, append citations if any
+                    if _sources:
+                        citations_header = "\n## Citations\n"
+                        yield (json.dumps({"event": "token", "text": citations_header, "index": index}) + "\n").encode("utf-8")
+                        index += 1
+                        for url, title in _sources.items():
+                            line = f"- [{title}]({url})\n"
+                            yield (json.dumps({"event": "token", "text": line, "index": index}) + "\n").encode("utf-8")
+                            index += 1
                 else:
                     print("[Runner] No content received from invoke")
                     yield (json.dumps({"event": "token", "text": "Sorry, I encountered an issue processing your request.", "index": index}) + "\n").encode("utf-8")
@@ -278,6 +333,16 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
             except Exception as e:
                 print(f"[Runner] Invoke fallback failed: {e}")
                 yield (json.dumps({"event": "token", "text": "Sorry, I encountered an issue processing your request.", "index": index}) + "\n").encode("utf-8")
+                index += 1
+
+        # If streaming branch succeeded and we have sources, append citations before end
+        if sent_any and _sources:
+            citations_header = "\n## Citations\n"
+            yield (json.dumps({"event": "token", "text": citations_header, "index": index}) + "\n").encode("utf-8")
+            index += 1
+            for url, title in _sources.items():
+                line = f"- [{title}]({url})\n"
+                yield (json.dumps({"event": "token", "text": line, "index": index}) + "\n").encode("utf-8")
                 index += 1
 
         # Final end marker

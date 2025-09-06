@@ -5,7 +5,7 @@ from app.config import settings
 import httpx
 from bs4 import BeautifulSoup
 from app.utils.stream_utils import emit_process
-from .helper_tools import needs_recency_injection, inject_datetime_into_query
+from .helper_tools import needs_recency_injection, inject_datetime_into_query, sanitize_query_for_recency
 
 
 def _format_exa_result(result: Any) -> str:
@@ -58,7 +58,8 @@ def exa_search(query: str, max_results: int = 5) -> str:
     print(f"[Tool] exa_search called | query='{query}', max_results={max_results}")
     emit_process({"message": f"Searching Internet for '{query}'"})
     try:
-        effective_query = inject_datetime_into_query(query) if needs_recency_injection(query) else query
+        base_query = sanitize_query_for_recency(query)
+        effective_query = inject_datetime_into_query(base_query) if needs_recency_injection(base_query) else base_query
         if effective_query != query:
             print(f"[Tool] exa_search recency injection -> '{effective_query}'")
         retriever = ExaSearchRetriever(
@@ -83,8 +84,9 @@ def exa_search(query: str, max_results: int = 5) -> str:
             lines.append(f"{i}. {head} ({url})\n   {summary}")
         return "\n".join(lines) if lines else _format_exa_result([])
     except Exception:
+        # Fallback path should preserve effective_query to keep recency injection
         t = ExaSearchResults(exa_api_key=settings.EXA_API_KEY, max_results=max_results)
-        result = t.invoke(query)
+        result = t.invoke(effective_query)
         return _format_exa_result(result)
 
 
@@ -198,7 +200,8 @@ def exa_live_search(query: str, k: int = 8, max_chars: int = 1000) -> str:
     print(f"[Tool] exa_live_search called | query='{query}', k={k}, max_chars={max_chars}")
     emit_process({"message": f"Live searching Internet for '{query}'"})
     try:
-        effective_query = inject_datetime_into_query(query) if needs_recency_injection(query) else query
+        base_query = sanitize_query_for_recency(query)
+        effective_query = inject_datetime_into_query(base_query) if needs_recency_injection(base_query) else base_query
         if effective_query != query:
             print(f"[Tool] exa_live_search recency injection -> '{effective_query}'")
         retriever = ExaSearchRetriever(

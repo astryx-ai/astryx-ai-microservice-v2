@@ -55,7 +55,7 @@ def run_chart_viz(query: str, context_messages=None) -> str:
             "containing the full chart JSON. You MAY call 'emit_chart' multiple times within the same run to emit multiple different charts. "
             "Choose the chart 'type' that best fits the data (e.g., line-linear for time series, bar-standard for single series, bar-multiple/stacked for grouped data, pie for composition). "
             "Continue your analysis after calling the tool; do not repeat any JSON in text. "
-            "If needed, use 'fetch_url_text' to gather detailed content.\n\n"
+            "If needed, use 'fetch_url_text' to gather detailed content. Citations are MANDATORY: include a '## Citations' section listing all URLs used.\n\n"
             "WRITING STYLE:\n"
             "- Begin with a 1–2 sentence 'Chart insight' lead that explains the overall trend or takeaway.\n"
             "- After the lead, insert a blank line, then use '##' markdown headings for sections.\n"

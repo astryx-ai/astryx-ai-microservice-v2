@@ -75,7 +75,8 @@ def run_deep_research(query: str, max_chunks_per_url: int = 3, chunk_size: int =
             "2) Select the most relevant URLs from all search results, "
             "3) Use fetch_url_text to read selected pages in detail (chunk_index=1, increment as needed), "
             "4) Present findings in a well-structured format with tables for financial data, bullet points for insights, "
-            "and proper headings. Include specific numbers, percentages, market caps, and growth rates in tables."
+            "and proper headings. Include specific numbers, percentages, market caps, and growth rates in tables. "
+            "Citations are MANDATORY: include a '## Citations' section listing all URLs used."
             f"{conversation_context}"
         )
         user = (
