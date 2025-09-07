@@ -16,6 +16,10 @@ from app.agent_tools.financial_extraction import (
     fundamentals_header_tool,
     FundamentalsHeaderInput,
 )
+from app.agent_tools.price_movement import (
+    price_movement_tool,
+    PriceMovementInput,
+)
 
 # Note: subgraphs are not tools
 
@@ -98,6 +102,7 @@ STRUCTURED_TOOLS = {
     ),
     "extract_shareholding_pattern": shareholding_pattern_tool,
     "extract_fundamentals_header": fundamentals_header_tool,
+    "price_movement_analysis": price_movement_tool,
 }
 
 
@@ -105,7 +110,7 @@ STRUCTURED_TOOLS = {
 TOOL_CATEGORIES: Dict[str, List[str]] = {
     "web_search": ["exa_search", "exa_live_search", "fetch_url_text"],
     "chart": ["emit_chart"],
-    "financial_analysis": ["extract_shareholding_pattern", "extract_fundamentals_header"],
+    "financial_analysis": ["extract_shareholding_pattern", "extract_fundamentals_header", "price_movement_analysis"],
 }
 
 
