@@ -182,7 +182,9 @@ def decide_route(
         "director", "audit committee", "financial filing", "annual report",
         "bse filing", "compliance", "ownership pattern", "ownership", "stakeholders",
         "holding pattern", "fii", "dii", "bse code", "regulatory filings",
-        "financial analysis", "corporate analysis"
+        "financial analysis", "corporate analysis", "price movement", "price analysis", 
+        "stock performance", "news correlation", "price trend", "monthly high", "monthly low",
+        "stock price", "price change", "volatility", "trading volume"
     ]
     
     # PRIORITY: Financial analysis has absolute priority

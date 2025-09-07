@@ -148,56 +148,126 @@ class IngestorService:
             return self._get_error_response(instrument_key or "", f"Extraction failed: {str(e)}")
 
     def extract_fundamentals_header(
-         self,
-         instrument_key: Optional[str] = None,
-         scripcode: Optional[str] = None,
-         stock_query: Optional[str] = None,
-         quote_type: str = "EQ",) -> Dict[str, Any]:
-         """
-         Fetch fundamental/company header data from BSE ComHeadernew API.
-         Does not store files; returns the JSON payload as-is with minimal metadata.
-         API: https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w?quotetype={quote_type}&scripcode={scripcode}
-         """
-         try:
-             # Resolve scripcode from query if needed
-             if not scripcode and stock_query:
-                 scripcode = self._resolve_scripcode_from_query(stock_query)
-             if not scripcode:
-                 return self._get_error_response(instrument_key or "", "No scripcode provided")
- 
-             # Build default instrument_key if missing
-             if not instrument_key:
-                 instrument_key = f"BSE_{quote_type}|SCRIPCODE_{scripcode}"
- 
-             url = (
-                 f"https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w?quotetype={quote_type}&scripcode={scripcode}"
-             )
-             headers = {
-                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-                 'Accept': 'application/json, text/javascript, /; q=0.01',
-                 'Referer': 'https://www.bseindia.com/'
-             }
- 
-             response = requests.get(url, headers=headers, timeout=30)
-             response.raise_for_status()
-             data = response.json()
- 
-             return {
-                 "instrument_key": instrument_key,
-                 "scripcode": scripcode,
-                 "quote_type": quote_type,
-                 "data_source": "bse_api",
-                 "api_url": url,
-                 "raw_response": data,
-                 "extracted_at": datetime.now().isoformat(),
-                 "status": "success",
-             }
-         except requests.exceptions.RequestException as e:
-             logger.error(f"ComHeadernew fetch failed for {instrument_key}: {str(e)}")
-             return self._get_error_response(instrument_key or "", f"ComHeadernew fetch failed: {str(e)}")
-         except Exception as e:
-             logger.exception(f"Error fetching fundamentals header for {instrument_key}: {str(e)}")
-             return self._get_error_response(instrument_key or "", f"Fundamentals header fetch failed: {str(e)}")
+        self,
+        instrument_key: Optional[str] = None,
+        scripcode: Optional[str] = None,
+        stock_query: Optional[str] = None,
+        quote_type: str = "EQ",
+    ) -> Dict[str, Any]:
+        """
+        Fetch fundamental/company header data from BSE ComHeadernew API.
+        Returns the minimal fields required for the UI cards on the right side.
+        """
+        try:
+            # Resolve scripcode from query if needed
+            if not scripcode and stock_query:
+                scripcode = self._resolve_scripcode_from_query(stock_query)
+            if not scripcode:
+                return self._get_error_response(instrument_key or "", "No scripcode provided")
+
+            # Build default instrument_key if missing
+            if not instrument_key:
+                instrument_key = f"BSE_{quote_type}|SCRIPCODE_{scripcode}"
+
+            url = (
+                f"https://api.bseindia.com/BseIndiaAPI/api/ComHeadernew/w?quotetype={quote_type}&scripcode={scripcode}"
+            )
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Referer': 'https://www.bseindia.com/'
+            }
+
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            # Augment with StockTrading snapshot (VWAP, Turnover, Market Cap)
+            snapshot = self._fetch_stock_trading_snapshot(scripcode=scripcode, quote_type=quote_type)
+            # Augment with HighLow snapshot for reliable 52-week values
+            highlow = self._fetch_highlow_snapshot(scripcode=scripcode, type_code=quote_type)
+
+            # Optionally enrich with DB company row (to get ISIN/NSE symbol for display)
+            company_row: Optional[Dict[str, Any]] = None
+            if stock_query:
+                try:
+                    from app.db import companies as _companies
+                    hits = _companies.search_companies(stock_query, limit=1)
+                    if not hits:
+                        hits = _companies.fuzzy_search_companies(stock_query, limit=1)
+                    company_row = (hits[0] if hits else None)
+                except Exception:
+                    company_row = None
+
+            # Extract fields for UI cards (best-effort from ComHeader + DB + snapshot)
+            nse_symbol = (company_row or {}).get("nse_symbol")
+            bse_symbol = (company_row or {}).get("bse_symbol")
+            isin = (company_row or {}).get("isin")
+            industry = (company_row or {}).get("industry") or self._find_value_by_keys(data, ["Industry"]) or None
+            sector = self._find_value_by_keys(data, ["Sector"]) or None
+            face_value = self._to_number(self._find_value_by_keys(data, ["FaceVal", "Face Value", "FV"]))
+            high_52 = self._to_number(self._find_value_by_keys(data, ["High52", "52weekHigh", "WeekHigh52", "wk52High", "Wk52High", "wkHigh52", "High_52", "Week52High", "High52W", "High52week"]))
+            low_52 = self._to_number(self._find_value_by_keys(data, ["Low52", "52weekLow", "WeekLow52", "wk52Low", "Wk52Low", "wkLow52", "Low_52", "Week52Low", "Low52W", "Low52week"]))
+            pe = self._to_number(self._find_value_by_keys(data, ["PE", "P/E"]))
+            eps = self._to_number(self._find_value_by_keys(data, ["EPS"]))
+            group = self._find_value_by_keys(data, ["Group"]) or None
+            roe = self._to_number(self._find_value_by_keys(data, ["ROE"]))
+
+            # Prefer HighLow values if available
+            if isinstance(highlow, dict):
+                if highlow.get("high_52") is not None:
+                    high_52 = highlow.get("high_52")
+                if highlow.get("low_52") is not None:
+                    low_52 = highlow.get("low_52")
+
+            # Build display symbol preference: ticker_name + scripcode (ticker_name prefers NSE, then BSE)
+            ticker_name = nse_symbol or bse_symbol or ""
+            display_symbol = f"{ticker_name} {scripcode}".strip()
+
+            profile = {
+                "display_symbol": display_symbol,
+                "isin": isin,
+                "bse_symbol": bse_symbol,
+                "sector": sector,
+                "industry": industry,
+                "exchange": "BSE",  # current backend is BSE-centric
+                "country": "India",
+                "market_cap": snapshot.get("mktcap_full_value"),
+                "group": group,
+            }
+
+            financial_profile = {
+                "pe": pe,
+                "eps": eps,
+                "vwap": snapshot.get("vwap"),
+                "face_value": face_value,
+                "roe": roe,
+                "fifty_two_week_high": high_52,
+                "fifty_two_week_low": low_52,
+                "volume_turnover": {
+                    "value": snapshot.get("turnover_value"),
+                    "unit": snapshot.get("turnover_unit"),
+                },
+            }
+
+            return {
+                "instrument_key": instrument_key,
+                "scripcode": scripcode,
+                "quote_type": quote_type,
+                "cards": {
+                    "profile": profile,
+                    "financial_profile": financial_profile,
+                },
+                "extracted_at": datetime.now().isoformat(),
+                "status": "success",
+            }
+        except requests.exceptions.RequestException as e:
+            logger.error(f"ComHeadernew fetch failed for {instrument_key}: {str(e)}")
+            return self._get_error_response(instrument_key or "", f"ComHeadernew fetch failed: {str(e)}")
+        except Exception as e:
+            logger.exception(f"Error fetching fundamentals header for {instrument_key}: {str(e)}")
+            return self._get_error_response(instrument_key or "", f"Fundamentals header fetch failed: {str(e)}")
+        
 
     def extract_corporate_governance_range(self,
         instrument_key: Optional[str] = None,
@@ -781,4 +851,120 @@ class IngestorService:
             return code
         except Exception as exc:
             logger.warning(f"Failed to resolve scripcode from query '{stock_query}': {exc}")
+            return None
+        
+    def _fetch_stock_trading_snapshot(self, *, scripcode: str, quote_type: str = "EQ") -> Dict[str, Any]:
+        """
+        Fetch snapshot metrics (VWAP, Turnover, Market Cap) from BSE StockTrading API.
+        Returns raw payload and a few normalized convenience fields.
+        API: https://api.bseindia.com/BseIndiaAPI/api/StockTrading/w?flag=&quotetype=EQ&scripcode={scripcode}
+        """
+        try:
+            url = (
+                f"https://api.bseindia.com/BseIndiaAPI/api/StockTrading/w?flag=&quotetype={quote_type}&scripcode={scripcode}"
+            )
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Referer': 'https://www.bseindia.com/'
+            }
+            resp = requests.get(url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            payload = resp.json() if resp.content else {}
+
+            def _to_float(val: Any) -> Optional[float]:
+                try:
+                    if val is None:
+                        return None
+                    s = str(val).strip()
+                    # remove units like (Cr.) or (Lakh) and commas
+                    s = s.replace(',', '')
+                    s = s.replace('(Cr.)', '').replace('(Lakh)', '').strip()
+                    if not s:
+                        return None
+                    return float(s)
+                except Exception:
+                    return None
+
+            result: Dict[str, Any] = {
+                "raw_stock_trading": payload,
+                "vwap": _to_float(payload.get("WAP")),  # VWAP
+                "turnover_value": _to_float(payload.get("Turnover")),
+                "turnover_unit": str(payload.get("Turnoverin") or "").strip(),
+                "mktcap_full_value": _to_float(payload.get("MktCapFull")),
+                "mktcap_ff_value": _to_float(payload.get("MktCapFF")),
+                "ex_date": payload.get("ExDate"),
+            }
+            return result
+        except Exception as exc:
+            logger.warning(f"Failed fetching StockTrading snapshot for {scripcode}: {exc}")
+            return {"error": str(exc)}
+
+    def _fetch_highlow_snapshot(self, *, scripcode: str, type_code: str = "EQ") -> Dict[str, Any]:
+        """
+        Fetch 52-week high/low from BSE HighLow API.
+        API: https://api.bseindia.com/BseIndiaAPI/api/HighLow/w?Type=EQ&flag=C&scripcode={scripcode}
+        """
+        try:
+            url = (
+                f"https://api.bseindia.com/BseIndiaAPI/api/HighLow/w?Type={type_code}&flag=C&scripcode={scripcode}"
+            )
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Referer': 'https://www.bseindia.com/'
+            }
+            resp = requests.get(url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            payload = resp.json() if resp.content else {}
+
+            high = self._to_number(self._find_value_by_keys(payload, ["Fifty2WkHigh_adj", "Fifty2WkHighAdj", "FiftyTwoWeekHighAdj"]))
+            low = self._to_number(self._find_value_by_keys(payload, ["Fifty2WkLow_adj", "Fifty2WkLowAdj", "FiftyTwoWeekLowAdj"]))
+
+            return {
+                "raw_highlow": payload,
+                "high_52": high,
+                "low_52": low,
+            }
+        except Exception as exc:
+            logger.warning(f"Failed fetching HighLow snapshot for {scripcode}: {exc}")
+            return {"error": str(exc)}
+
+    def _find_value_by_keys(self, obj: Any, keys: List[str]) -> Optional[Any]:
+        """Case-insensitive recursive search for any of the keys in nested dict/list."""
+        keyset = {k.lower() for k in keys}
+        try:
+            def walk(x: Any) -> Optional[Any]:
+                if isinstance(x, dict):
+                    # direct keys
+                    for k, v in x.items():
+                        if str(k).lower() in keyset:
+                            return v
+                    # nested
+                    for v in x.values():
+                        res = walk(v)
+                        if res is not None:
+                            return res
+                elif isinstance(x, list):
+                    for it in x:
+                        res = walk(it)
+                        if res is not None:
+                            return res
+                return None
+            return walk(obj)
+        except Exception:
+            return None
+
+    def _to_number(self, val: Any) -> Optional[float]:
+        """Best-effort numeric coercion from strings like '1,234.56' or '12.3 (Cr.)'."""
+        try:
+            if val is None:
+                return None
+            s = str(val).strip()
+            s = s.replace(',', '')
+            s = s.replace('(Cr.)', '').replace('(Lakh)', '').replace('%', '').strip()
+            if not s:
+                return None
+            return float(s)
+        except Exception:
             return None

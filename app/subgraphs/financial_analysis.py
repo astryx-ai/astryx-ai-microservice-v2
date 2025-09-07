@@ -11,6 +11,10 @@ from app.agent_tools.financial_extraction import (
     fundamentals_header_tool,
     FundamentalsHeaderInput,
 )
+from app.agent_tools.price_movement import (
+    price_movement_tool,
+    PriceMovementInput,
+)
 from app.agent_tools.exa import (
     exa_search as _exa_search,
     exa_live_search as _exa_live_search,
@@ -28,6 +32,7 @@ def _get_financial_analysis_tools():
     return [
         fundamentals_header_tool,  # Add as first tool for priority
         shareholding_pattern_tool,
+        price_movement_tool,  # Add price movement analysis tool
         StructuredTool.from_function(
             func=lambda query, max_results=5: _exa_search.func(query, max_results),
             name="exa_search",
@@ -119,6 +124,7 @@ def run_financial_analysis(query: str, context_messages=None) -> str:
                 "🛠️ **AVAILABLE TOOLS (Priority Order)**:\n"
                 "• extract_fundamentals_header: Get REAL-TIME company fundamentals, stock prices, and key metrics from BSE API\n"
                 "• extract_shareholding_pattern: Extract OFFICIAL shareholding data from BSE XBRL filings\n"
+                "• price_movement_analysis: Analyze 1-month stock price movements correlated with news events\n"
                 "• exa_search: Search for additional financial and market information when BSE data needs context\n"
                 "• exa_live_search: Get real-time financial news and insights\n"
                 "• fetch_url_text: Fetch detailed content from financial websites\n\n"
@@ -126,6 +132,7 @@ def run_financial_analysis(query: str, context_messages=None) -> str:
                 "🚨 **CRITICAL TOOL SELECTION RULES**:\n"
                 "• For 'fundamentals', 'stock price', 'market cap', 'P/E ratio' → ALWAYS use extract_fundamentals_header FIRST\n"
                 "• For 'shareholding', 'ownership', 'promoter holdings' → ALWAYS use extract_shareholding_pattern FIRST\n"
+                "• For 'price movement', 'price analysis', 'stock performance', 'news correlation' → ALWAYS use price_movement_analysis\n"
                 "• For Indian companies → PREFER BSE API tools over web search\n"
                 "• Use web search ONLY to supplement BSE data, not replace it\n\n"
                 
