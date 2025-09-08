@@ -10,6 +10,8 @@ class AgentState(TypedDict, total=False):
     # Optional convenience fields for routers
     query: Optional[str]
     context: Optional[List[Any]]
+    # Current time provided by runner for recency-aware behaviors
+    now_utc: Optional[str]
 
 # Single source of truth for all available routes/subgraphs
 AVAILABLE_ROUTES: List[str] = [

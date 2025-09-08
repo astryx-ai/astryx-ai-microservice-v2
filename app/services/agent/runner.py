@@ -26,8 +26,12 @@ def agent_answer(question: str, user_id: str | None = None, chat_id: str | None 
 
     # Simple system and user messages for the graph
     system_msg = SystemMessage(content=(
-        "You are a financial AI assistant. Use the available search tools to find relevant information "
-        "and present it with clear structure, tables for numerical data, and proper citations."
+        "You are a financial AI assistant. "
+        f"Current datetime (UTC): {get_current_datetime_string()}. "
+        "Prefer the most up-to-date, reputable sources and verify recency when relevant. "
+        "Use web tools without rewriting the user's query text; if recency matters, reason about the timeframe "
+        "and reflect it in your plan/answer rather than modifying the tool query. "
+        "Present results with clear structure, tables for numerical data, and proper citations."
     ))
     user_msg = HumanMessage(content=f"Task: {question}")
 
@@ -52,6 +56,7 @@ def agent_answer(question: str, user_id: str | None = None, chat_id: str | None 
         "decision_reason": reason,
         "query": question,
         "context": user_and_ai_messages,
+        "now_utc": get_current_datetime_string(),
     }
     print(f"[Runner] Pre-computed route: {route}")
 
@@ -108,8 +113,12 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
 
         # Simple system and user messages for the graph
         system = SystemMessage(content=(
-            "You are a financial AI assistant. Use the available search tools to find relevant information "
-            "and present it with clear structure, tables for numerical data, and proper citations."
+            "You are a financial AI assistant. "
+            f"Current datetime (UTC): {get_current_datetime_string()}. "
+            "Prefer the most up-to-date, reputable sources and verify recency when relevant. "
+            "Use web tools without rewriting the user's query text; if recency matters, reason about the timeframe "
+            "and reflect it in your plan/answer rather than modifying the tool query. "
+            "Present results with clear structure, tables for numerical data, and proper citations."
         ))
         user = HumanMessage(content=f"Task: {question}")
 
@@ -145,7 +154,7 @@ async def agent_stream_response(question: str, user_id: str | None = None, chat_
         "route": chosen_route,
         "decision_reason": reason,
         "query": user_query,
-        "context": user_and_ai_messages
+        "now_utc": get_current_datetime_string(),
     }
     print(f"[Runner] Pre-computed route: {chosen_route}")
 

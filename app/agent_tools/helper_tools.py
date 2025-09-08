@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable, Any, List, Tuple
+from typing import Any, List, Tuple
 import json
 
 # LLM-based decision support
@@ -9,65 +9,9 @@ from app.services.llms.azure_openai import decision_model
 from app.services.agent.state import AVAILABLE_ROUTES
 from langchain_core.messages import SystemMessage, HumanMessage
 
-
 def get_current_datetime_string() -> str:
     now = datetime.now(timezone.utc)
     return now.strftime("%Y-%m-%d %H:%M UTC")
-
-
-def _contains_any(text: str, needles: Iterable[str]) -> bool:
-    lowered = (text or "").lower()
-    return any(n in lowered for n in needles)
-
-
-def _has_explicit_timeframe(query: str) -> bool:
-    """Return True if the query already specifies a timeframe (years, months, quarters, FY, ranges)."""
-    import re
-    q = (query or "")
-    ql = q.lower()
-    # If already contains explicit 'as of', treat as explicit timeframe
-    if "as of" in ql:
-        return True
-    # Year like 2019, 2020, 2024, 2025
-    if re.search(r"\b(19|20)\d{2}\b", q):
-        return True
-    # Year ranges like 2020-2025
-    if re.search(r"\b(19|20)\d{2}\s*[-–]\s*(19|20)\d{2}\b", q):
-        return True
-    # Fiscal year markers
-    if "fy" in ql or "q1" in ql or "q2" in ql or "q3" in ql or "q4" in ql:
-        return True
-    # Month names
-    months = [
-        "january","february","march","april","may","june",
-        "july","august","september","october","november","december",
-    ]
-    if any(m in ql for m in months):
-        return True
-    return False
-
-
-def needs_recency_injection(query: str) -> bool:
-    """Decide if we should inject current datetime.
-
-    True when:
-    - The query contains explicit recency keywords; OR
-    - The query lacks any explicit timeframe (years/months/quarters/FY).
-    """
-    keywords = [
-        "today","now","current","latest","recent","this week","past week","as of",
-        "up to date","uptodate","breaking","new","just released","update","updated",
-        "real-time","realtime","live","this month","this quarter","this year","ytd",
-    ]
-    if _contains_any(query, keywords):
-        print(f"[Helper] needs_recency_injection: True (recency keywords) for query='{query}'")
-        return True
-    if not _has_explicit_timeframe(query):
-        print(f"[Helper] needs_recency_injection: True (no explicit timeframe) for query='{query}'")
-        return True
-    print(f"[Helper] needs_recency_injection: False (explicit timeframe present) for query='{query}'")
-    return False
-
 
 def inject_datetime_into_query(query: str) -> str:
     """Append current datetime if not already present. Idempotent."""
@@ -80,24 +24,6 @@ def inject_datetime_into_query(query: str) -> str:
     injected = f"{q} (as of {get_current_datetime_string()})".strip()
     print(f"[Helper] inject_datetime_into_query: '{injected}'")
     return injected
-
-
-def sanitize_query_for_recency(query: str) -> str:
-    """If intent is to get current data, strip stale explicit years from the query.
-
-    - Removes standalone year tokens like 2019..2024 when recency intent is detected.
-    - Leaves query unchanged when no recency intent.
-    """
-    import re
-    if not needs_recency_injection(query):
-        return query
-    cleaned = re.sub(r"\b(19|20)\d{2}\b", "", query or "").strip()
-    # Collapse extra spaces
-    cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    if cleaned != query:
-        print(f"[Helper] sanitize_query_for_recency: '{query}' -> '{cleaned}'")
-    return cleaned
-
 
 def _summarize_context_for_router(messages: List[Any] | None) -> str:
     if not messages:

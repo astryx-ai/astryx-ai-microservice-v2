@@ -49,6 +49,11 @@ def run_chart_viz(query: str, context_messages=None) -> str:
                 conversation_context = "\n\nCONVERSATION CONTEXT:\n" + "\n".join(context_parts[-4:])
         system = (
             "You are a data collection and analysis agent for charting. "
+            "Always prefer the most recent credible data. Do NOT default to 2023. "
+            "When the user doesn't specify a timeframe, search and use the LATEST available year/period, "
+            "and state that year explicitly in the chart title/description. If the latest year is not consistently "
+            "available across sources, use the newest year that is consistent across the majority of sources. "
+            "If a source is older than ~12–18 months, keep searching for a newer one or note the limitation. "
             "Your job is to search and extract structured numerical facts (labels and values) from the web. "
             "DO NOT include any JSON in your text output. "
             "When you have enough cleaned data points for a chart, CALL the tool 'emit_chart' with one argument named 'payload' "
@@ -60,6 +65,10 @@ def run_chart_viz(query: str, context_messages=None) -> str:
             "- Begin with a 1–2 sentence 'Chart insight' lead that explains the overall trend or takeaway.\n"
             "- After the lead, insert a blank line, then use '##' markdown headings for sections.\n"
             "- Ensure proper markdown hygiene: never place a heading immediately after a sentence without a blank line.\n\n"
+            "RECENCY & YEAR SELECTION:\n"
+            "- Prefer queries like 'latest' or 'current' rather than guessing a specific year.\n"
+            "- Verify the year attached to each numeric value and keep all data to the same most-recent year when possible.\n"
+            "- Include the year (e.g., 2024/2025) in the chart title/description so recency is clear.\n\n"
             "SUPPORTED CHART TYPES AND REQUIRED KEYS (must be present in payload):\n"
             "- bar-standard: [type, title, description, dataKey, nameKey, data]\n"
             "- bar-multiple: [type, title, description, dataKey, nameKey, xAxisKey, layout, data]\n"
@@ -93,7 +102,7 @@ def run_chart_viz(query: str, context_messages=None) -> str:
         user = (
             f"Task: {query}\n"
             f"Instructions:\n"
-            f"- Search the web for relevant, recent numerical data points.\n"
+            f"- Search the web for relevant, RECENT numerical data points. Prefer live/updated sources.\n"
             f"- Extract and normalize them into label/value pairs.\n"
             f"- Decide the most appropriate chart type (bar/line/area/pie/radar/radial variants).\n"
             f"- Build a VALID payload including ALL required keys for the chosen type (see list above).\n"
@@ -101,6 +110,8 @@ def run_chart_viz(query: str, context_messages=None) -> str:
             f"- Then CALL tool emit_chart with one argument named payload containing the full JSON. If the user requested multiple charts or multiple views are clearly helpful, call emit_chart MULTIPLE times—once per chart.\n"
             f"- DO NOT include any JSON in the textual response. Only use the tool to emit the chart.\n"
             f"- After calling the tool, continue with a succinct analysis in prose only.\n"
+            f"- If the user did not specify a year, use 'latest' data. Avoid defaulting to 2023.\n"
+            f"- Ensure the chart title or description clearly states the year/period used (e.g., FY 2024/25 or CY 2024).\n"
             f"- Start your response with a 'Chart insight' lead (1–2 sentences), then a blank line, then '##' headings."
         )
         try:
