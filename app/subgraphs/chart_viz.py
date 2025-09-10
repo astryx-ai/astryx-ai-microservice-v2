@@ -1,10 +1,10 @@
 from langgraph.prebuilt import create_react_agent
-from langchain.tools import StructuredTool  # noqa: F401 (kept for historical context if needed)
 from pydantic import BaseModel, Field
 from app.services.llms.azure_openai import chat_model
 from app.utils.stream_utils import emit_process
 from app.agent_tools.registry import load_tools
 from app.agent_tools.formatter import format_financial_content
+from app.agent_tools.chart_formats import SUPPORTED_CHART_FORMATS
 
 
 class ExaSearchInput(BaseModel):
@@ -15,18 +15,42 @@ class ExaSearchInput(BaseModel):
 class ExaLiveSearchInput(BaseModel):
     query: str = Field(..., description="Live search query")
     k: int = Field(8, ge=1, le=20, description="Number of documents to retrieve")
-    max_chars: int = Field(1000, ge=100, le=8000, description="Maximum characters in each summary")
+    max_chars: int = Field(
+        1000, ge=100, le=8000, description="Maximum characters in each summary"
+    )
 
 
 class FetchUrlTextInput(BaseModel):
     url: str = Field(..., description="Web page URL to fetch in raw text chunks")
-    chunk_index: int = Field(1, ge=1, le=1000, description="1-based index of chunk to return")
-    chunk_size: int = Field(4000, ge=500, le=20000, description="Approximate characters per chunk")
-    max_total_chars: int = Field(120000, ge=5000, le=500000, description="Safety cap on total extracted characters")
+    chunk_index: int = Field(
+        1, ge=1, le=1000, description="1-based index of chunk to return"
+    )
+    chunk_size: int = Field(
+        4000, ge=500, le=20000, description="Approximate characters per chunk"
+    )
+    max_total_chars: int = Field(
+        120000,
+        ge=5000,
+        le=500000,
+        description="Safety cap on total extracted characters",
+    )
 
 
 def _get_chart_viz_tools():
     return load_tools(use_cases=["web_search", "chart"], structured=True)
+
+
+def _format_chart_schemas() -> str:
+    """Format chart schemas for inclusion in system prompt."""
+    lines = []
+    for chart_type, schema in SUPPORTED_CHART_FORMATS.items():
+        required_keys = schema.get("required_keys", [])
+        example = schema.get("example", {})
+        lines.append(f"- {chart_type}: {required_keys}")
+        if example.get("data"):
+            sample_data = example["data"]
+            lines.append(f"  Example data structure: {sample_data}")
+    return "\n".join(lines)
 
 
 def run_chart_viz(query: str, context_messages=None) -> str:
@@ -40,13 +64,15 @@ def run_chart_viz(query: str, context_messages=None) -> str:
             print(f"[ChartViz] Including {len(context_messages)} context messages")
             context_parts = []
             for msg in context_messages[-6:]:
-                if hasattr(msg, 'type'):
+                if hasattr(msg, "type"):
                     role = "User" if msg.type == "human" else "Assistant"
-                    content = getattr(msg, 'content', str(msg))
+                    content = getattr(msg, "content", str(msg))
                     if content and not content.startswith("You are"):
                         context_parts.append(f"{role}: {content[:500]}")
             if context_parts:
-                conversation_context = "\n\nCONVERSATION CONTEXT:\n" + "\n".join(context_parts[-4:])
+                conversation_context = "\n\nCONVERSATION CONTEXT:\n" + "\n".join(
+                    context_parts[-4:]
+                )
         system = (
             "You are a data collection and analysis agent for charting. "
             "Always prefer the most recent credible data. Do NOT default to 2023. "
@@ -58,7 +84,13 @@ def run_chart_viz(query: str, context_messages=None) -> str:
             "DO NOT include any JSON in your text output. "
             "When you have enough cleaned data points for a chart, CALL the tool 'emit_chart' with one argument named 'payload' "
             "containing the full chart JSON. You MAY call 'emit_chart' multiple times within the same run to emit multiple different charts. "
-            "Choose the chart 'type' that best fits the data (e.g., line-linear for time series, bar-standard for single series, bar-multiple/stacked for grouped data, pie for composition). "
+            "Choose the chart 'type' that best fits the data (e.g., line-linear for time series, bar-standard for single series, pie for composition). "
+            "IMPORTANT: For the 'data' array, every entry MUST strictly follow the schema using the provided keys: "
+            "- The numeric value must always be under the key specified by 'dataKey'. "
+            "- The label/name must always be under the key specified by 'nameKey'. "
+            "- Any grouping dimension (like sector, year, region) must always be under the key specified by 'xAxisKey' if provided. "
+            "Never use company names or categories as raw keys. Each record must be an object with consistent key-value pairs. "
+            "Example: { 'market_cap': 203431, 'company': 'IOC', 'sector': 'Oil' }. "
             "Continue your analysis after calling the tool; do not repeat any JSON in text. "
             "If needed, use 'fetch_url_text' to gather detailed content. Citations are MANDATORY: include a '## Citations' section listing all URLs used.\n\n"
             "WRITING STYLE:\n"
@@ -69,36 +101,14 @@ def run_chart_viz(query: str, context_messages=None) -> str:
             "- Prefer queries like 'latest' or 'current' rather than guessing a specific year.\n"
             "- Verify the year attached to each numeric value and keep all data to the same most-recent year when possible.\n"
             "- Include the year (e.g., 2024/2025) in the chart title/description so recency is clear.\n\n"
-            "SUPPORTED CHART TYPES AND REQUIRED KEYS (must be present in payload):\n"
-            "- bar-standard: [type, title, description, dataKey, nameKey, data]\n"
-            "- bar-multiple: [type, title, description, dataKey, nameKey, xAxisKey, layout, data]\n"
-            "- bar-stacked: [type, title, description, xAxisKey, nameKey, groupedKeys, data]\n"
-            "- bar-negative: [type, title, description, xAxisKey, groupedKeys, legend, data]\n"
-            "- area-standard: [type, title, description, dataKey, nameKey, color, data]\n"
-            "- area-linear: [type, title, description, dataKey, nameKey, color, data]\n"
-            "- area-stacked: [type, title, description, dataKey, groupedKeys, color, legend, data]\n"
-            "- area-stacked-alt: [type, title, description, groupedKeys, xAxisKey, data]\n"
-            "- line-standard: [type, title, description, dataKey, nameKey, color, data]\n"
-            "- line-linear: [type, title, description, dataKey, nameKey, color, legend, data]\n"
-            "- line-multiple: [type, title, description, dataKey, groupedKeys, color, legend, data]\n"
-            "- line-dots: [type, title, description, dataKey, color, legend, dots, data]\n"
-            "- line-label: [type, title, description, dataKey, xAxisKey, customLabel, data]\n"
-            "- line-label-2: [type, title, description, dataKey, nameKey, color, label, data]\n"
-            "- pie-standard: [type, title, description, dataKey, nameKey, data]\n"
-            "- pie-label: [type, title, description, dataKey, nameKey, label, legend, data]\n"
-            "- pie-interactive: [type, title, description, dataKey, nameKey, legend, data]\n"
-            "- pie-donut: [type, title, description, dataKey, nameKey, legend, data]\n"
-            "- radar-standard: [type, title, description, dataKey, nameKey, color, legend, data]\n"
-            "- radar-lines-only: [type, title, description, dataKey, nameKey, color, legend, data]\n"
-            "- radar-multiple: [type, title, description, dataKey, color, legend, grid, data]\n"
-            "- radial-standard: [type, title, description, dataKey, groupedKeys, color, legend, data]\n"
-            "- radial-stacked: [type, title, description, groupedKeys, nameKey, data]\n"
-            "- radial-progress: [type, title, description, dataKey, nameKey, centerText, centerLabel, data]\n\n"
+            f"SUPPORTED CHART TYPES AND REQUIRED KEYS:\n"
+            f"{_format_chart_schemas()}\n"
             "DEFAULTS: If a required key is not obvious, include a sensible default: "
             "color='#4e79a7'; legend=['Series'] or []; layout='vertical'; grid=true; dots=true; "
             "customLabel='value'; label='value'."
             f"{conversation_context}"
         )
+
         user = (
             f"Task: {query}\n"
             f"Instructions:\n"
@@ -119,16 +129,24 @@ def run_chart_viz(query: str, context_messages=None) -> str:
             emit_process({"message": "Generating chart"})
         except Exception:
             pass
-        result = agent.invoke({"messages": [
-            {"type": "system", "content": system},
-            {"type": "human", "content": user},
-        ]})
+        result = agent.invoke(
+            {
+                "messages": [
+                    {"type": "system", "content": system},
+                    {"type": "human", "content": user},
+                ]
+            }
+        )
         print(f"[ChartViz] Agent invoke result type: {type(result)}")
         if isinstance(result, dict):
             messages = result.get("messages", [])
             if messages:
                 last_message = messages[-1]
-                content = getattr(last_message, "content", "") if hasattr(last_message, "content") else str(last_message)
+                content = (
+                    getattr(last_message, "content", "")
+                    if hasattr(last_message, "content")
+                    else str(last_message)
+                )
             else:
                 content = ""
         elif isinstance(result, str):
@@ -146,5 +164,3 @@ def run_chart_viz(query: str, context_messages=None) -> str:
         return cleaned
     except Exception as e:
         return f"Chart visualization failed: {e}"
-
-

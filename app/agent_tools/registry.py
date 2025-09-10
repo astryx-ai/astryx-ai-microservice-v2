@@ -23,14 +23,25 @@ class ExaSearchInput(BaseModel):
 class ExaLiveSearchInput(BaseModel):
     query: str = Field(..., description="Live search query")
     k: int = Field(8, ge=1, le=20, description="Number of documents to retrieve")
-    max_chars: int = Field(1000, ge=100, le=8000, description="Maximum characters in each summary")
+    max_chars: int = Field(
+        1000, ge=100, le=8000, description="Maximum characters in each summary"
+    )
 
 
 class FetchUrlTextInput(BaseModel):
     url: str = Field(..., description="Web page URL to fetch in raw text chunks")
-    chunk_index: int = Field(1, ge=1, le=1000, description="1-based index of chunk to return")
-    chunk_size: int = Field(4000, ge=500, le=20000, description="Approximate characters per chunk")
-    max_total_chars: int = Field(120000, ge=5000, le=500000, description="Safety cap on total extracted characters")
+    chunk_index: int = Field(
+        1, ge=1, le=1000, description="1-based index of chunk to return"
+    )
+    chunk_size: int = Field(
+        4000, ge=500, le=20000, description="Approximate characters per chunk"
+    )
+    max_total_chars: int = Field(
+        120000,
+        ge=5000,
+        le=500000,
+        description="Safety cap on total extracted characters",
+    )
 
 
 class ChartEmitInput(BaseModel):
@@ -39,6 +50,20 @@ class ChartEmitInput(BaseModel):
 
 
 # ---------- Core tools (non-structured) ----------
+
+# Description with non-working graph
+# description=(
+#     "Emit a chart_data event directly to the stream. Pass one argument named 'payload'"
+#     " which is a JSON object containing the chart specification. You MAY call this tool"
+#     " multiple times in a single run to emit multiple charts. Supported types include:"
+#     " bar-standard, bar-multiple, bar-stacked, bar-negative, area-standard, area-linear,"
+#     " area-stacked, line-standard, line-linear, line-multiple, line-dots, line-label,"
+#     " pie-standard, pie-label, pie-interactive, pie-donut, radar-standard, radar-lines-only,"
+#     " radar-multiple, radial-standard, radial-stacked, radial-progress. The payload must include"
+#     " the required keys for the chosen type (e.g., title, description, dataKey/nameKey or groupedKeys,"
+#     " and data: []). Returns empty string."
+# ),
+
 ALL_TOOLS = {
     "exa_search": _exa_search,
     "exa_live_search": _exa_live_search,
@@ -50,10 +75,10 @@ ALL_TOOLS = {
             "Emit a chart_data event directly to the stream. Pass one argument named 'payload'"
             " which is a JSON object containing the chart specification. You MAY call this tool"
             " multiple times in a single run to emit multiple charts. Supported types include:"
-            " bar-standard, bar-multiple, bar-stacked, bar-negative, area-standard, area-linear,"
-            " area-stacked, line-standard, line-linear, line-multiple, line-dots, line-label,"
+            " bar-standard, bar-stacked, bar-negative, area-standard, area-linear,"
+            " area-stacked, line-standard, line-linear, line-label,"
             " pie-standard, pie-label, pie-interactive, pie-donut, radar-standard, radar-lines-only,"
-            " radar-multiple, radial-standard, radial-stacked, radial-progress. The payload must include"
+            " radial-standard, radial-stacked, radial-progress. The payload must include"
             " the required keys for the chosen type (e.g., title, description, dataKey/nameKey or groupedKeys,"
             " and data: []). Returns empty string."
         ),
@@ -71,13 +96,17 @@ STRUCTURED_TOOLS = {
         args_schema=ExaSearchInput,
     ),
     "exa_live_search": StructuredTool.from_function(
-        func=lambda query, k=8, max_chars=1000: _exa_live_search.func(query, k, max_chars),
+        func=lambda query, k=8, max_chars=1000: _exa_live_search.func(
+            query, k, max_chars
+        ),
         name="exa_live_search",
         description="Live-crawl search that returns detailed summaries preserving key facts and numbers.",
         args_schema=ExaLiveSearchInput,
     ),
     "fetch_url_text": StructuredTool.from_function(
-        func=lambda url, chunk_index=1, chunk_size=4000, max_total_chars=120000: _fetch_url_text.func(url, chunk_index, chunk_size, max_total_chars),
+        func=lambda url, chunk_index=1, chunk_size=4000, max_total_chars=120000: _fetch_url_text.func(
+            url, chunk_index, chunk_size, max_total_chars
+        ),
         name="fetch_url_text",
         description="Fetch a web page and return raw text in chunks without summarization.",
         args_schema=FetchUrlTextInput,
@@ -105,11 +134,15 @@ def load_tools(use_cases: List[str] | None = None, structured: bool = False):
     If None or empty, returns all tools.
     """
     name_to_tool = STRUCTURED_TOOLS if structured else ALL_TOOLS
-    print(f"[Registry] load_tools called | use_cases={use_cases}, structured={structured}")
+    print(
+        f"[Registry] load_tools called | use_cases={use_cases}, structured={structured}"
+    )
 
     if not use_cases:
         tools = [name_to_tool[n] for n in name_to_tool.keys()]
-        print(f"[Registry] load_tools selected all tools: {[getattr(t, 'name', str(t)) for t in tools]}")
+        print(
+            f"[Registry] load_tools selected all tools: {[getattr(t, 'name', str(t)) for t in tools]}"
+        )
         return tools
 
     selected: List[str] = []
@@ -123,5 +156,7 @@ def load_tools(use_cases: List[str] | None = None, structured: bool = False):
         if n in selected and n not in seen and n in name_to_tool:
             ordered.append(name_to_tool[n])
             seen.add(n)
-    print(f"[Registry] load_tools selected: {[getattr(t, 'name', str(t)) for t in ordered]}")
+    print(
+        f"[Registry] load_tools selected: {[getattr(t, 'name', str(t)) for t in ordered]}"
+    )
     return ordered
