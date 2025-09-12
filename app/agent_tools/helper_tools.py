@@ -57,10 +57,13 @@ def _llm_route_decision_multi(
         sys = (
             "You are a routing controller. Your job is to pick exactly ONE route "
             "from the provided list of available subgraphs.\n"
-            "Route Guidelines:\n"
-            "- 'chart_viz': For requests asking to create charts, graphs, visualizations, or show data in visual format\n"
-            "- 'deep_research': For comprehensive analysis requiring multi-step research and synthesis\n"
-            "- 'standard': For quick searches, follow-ups, and general queries\n"
+            "Route Guidelines (in priority order):\n"
+            "1. 'financial_analysis': For corporate financial analysis, shareholding patterns, governance data, XBRL analysis, BSE/NSE analysis, ownership patterns, promoter holdings\n"
+            "2. 'chart_viz': For requests EXPLICITLY asking to create charts, graphs, visualizations, or show data in visual format\n"
+            "3. 'deep_research': For comprehensive analysis requiring multi-step research and synthesis\n"
+            "4. 'standard': For quick searches, follow-ups, and general queries\n"
+            "CRITICAL: ANY query about shareholding, ownership, promoters, corporate data, BSE/NSE must go to 'financial_analysis' - NOT chart_viz. "
+            "Only choose 'chart_viz' if user explicitly requests visual charts/graphs. "
             "Pick the subgraph that best matches the task. "
             "Respond strictly as JSON with 'route' and 'reason'."
         )
@@ -96,10 +99,30 @@ def decide_route(
     if available_routes is None:
         available_routes = AVAILABLE_ROUTES
     context_summary = _summarize_context_for_router(context_messages)
+    
+    # First, check keywords for financial analysis (most reliable)
+    query_lower = query.lower()
+    financial_keywords = [
+        "shareholding", "shareholding pattern", "governance", "corporate governance", "board composition",
+        "promoter holding", "promoter", "promoters", "institutional holding", "foreign holding", "xbrl",
+        "director", "audit committee", "financial filing", "annual report",
+        "bse filing", "compliance", "ownership pattern", "ownership", "stakeholders",
+        "holding pattern", "fii", "dii", "bse code", "regulatory filings",
+        "financial analysis", "corporate analysis", "price movement", "price analysis", 
+        "stock performance", "news correlation", "price trend", "monthly high", "monthly low",
+        "stock price", "price change", "volatility", "trading volume"
+    ]
+    
+    # PRIORITY: Financial analysis has absolute priority
+    if any(keyword in query_lower for keyword in financial_keywords):
+        return "financial_analysis", "financial/corporate analysis requested (keyword priority)"
+    
+    # Then try LLM routing for other cases
     route, reason = _llm_route_decision_multi(query, has_context, context_summary, available_routes)
     if route:
         return route, reason
-    query_lower = query.lower()
+        
+    # Fallback to other keyword checks
     chart_keywords = [
         "chart", "graph", "visualization", "visualize", "plot", "bar chart",
         "pie chart", "line chart", "show data", "create chart", "display data",
